@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoboStock — ระบบจัดการสต๊อกอุปกรณ์หุ่นยนต์</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<!-- ============================================================
+  🔧 CONFIG: แก้ค่าตรงนี้อย่างเดียว
+  วางค่าจาก Firebase Console ของคุณ
+============================================================ -->
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyA3dmLOMg6FdTBsK77w--_SPfWzvtUBZpA",
+  authDomain: "robostock-center.firebaseapp.com",
+  projectId: "robostock-center",
+  storageBucket: "robostock-center.firebasestorage.app",
+  messagingSenderId: "998849568362",
+  appId: "1:998849568362:web:dfa9901085f6c9b6cff413"
+};
+</script>
+<!-- ============================================================ -->
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+<style>
+:root {
+  --bg:#0d0a1a; --bg2:#120f24; --card:#1a1535; --card2:#221d42;
+  --p1:#2d1b69; --p2:#4c2e9e; --p3:#9b6dff; --p4:#c4a0ff; --lav:#d4bbff;
+  --cyan:#64ffda; --gold:#ffd166; --pink:#ff6eb4;
+  --tx:#e8deff; --muted:#8b7aaa; --dim:#5a4d78;
+  --border:rgba(156,109,255,.2); --borderB:rgba(156,109,255,.5);
+  --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+  --sh:0 0 30px rgba(156,109,255,.15);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Sarabun',sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 15% 25%,rgba(76,46,158,.25),transparent 50%),radial-gradient(ellipse at 85% 75%,rgba(45,27,105,.2),transparent 50%);pointer-events:none;z-index:0}
+
+/* LOGIN */
+.login-wrap{position:fixed;inset:0;z-index:999;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+.login-box{background:var(--card);border:1px solid var(--borderB);border-radius:20px;padding:2.5rem;width:420px;max-width:95vw;box-shadow:0 0 80px rgba(156,109,255,.2);animation:fadeUp .4s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.login-logo{text-align:center;margin-bottom:2rem}
+.login-icon{width:56px;height:56px;background:linear-gradient(135deg,var(--p2),var(--p3));border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 0 30px rgba(156,109,255,.4);margin-bottom:.75rem}
+.login-title{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;background:linear-gradient(135deg,var(--p4),var(--lav));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.login-sub{font-size:13px;color:var(--muted);margin-top:4px}
+.login-err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--err);margin-bottom:1rem;display:none}
+
+/* HEADER */
+.hdr{position:sticky;top:0;z-index:100;background:rgba(18,15,36,.97);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:60px;box-shadow:var(--sh)}
+.logo{display:flex;align-items:center;gap:10px}
+.logo-ic{width:32px;height:32px;background:linear-gradient(135deg,var(--p2),var(--p3));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px}
+.logo-tx{font-family:'Rajdhani',sans-serif;font-size:19px;font-weight:700;letter-spacing:2px;background:linear-gradient(135deg,var(--p4),var(--lav));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.user-pill{display:flex;align-items:center;gap:8px;padding:5px 12px;background:var(--card);border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--muted)}
+.role-badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.role-admin{background:rgba(255,209,102,.15);color:var(--gold);border:1px solid rgba(255,209,102,.3)}
+.role-branch{background:rgba(100,255,218,.12);color:var(--cyan);border:1px solid rgba(100,255,218,.3)}
+.nav-tabs{display:flex;gap:3px;background:var(--bg2);border-radius:10px;padding:3px;border:1px solid var(--border)}
+.nav-tab{padding:5px 13px;border-radius:7px;font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;color:var(--muted);border:none;background:transparent;font-family:'Sarabun',sans-serif;white-space:nowrap}
+.nav-tab.active{background:linear-gradient(135deg,var(--p2),var(--p3));color:#fff;box-shadow:0 0 15px rgba(156,109,255,.3)}
+.nav-tab:hover:not(.active){color:var(--tx);background:var(--card)}
+
+/* MAIN */
+.main{position:relative;z-index:1;padding:1.5rem;max-width:1700px;margin:0 auto}
+.page{display:none}.page.active{display:block;animation:fadeIn .3s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:1.25rem;box-shadow:var(--sh)}
+.card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding-bottom:.75rem;border-bottom:1px solid var(--border)}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:600;color:var(--lav);display:flex;align-items:center;gap:8px}
+.ptitle{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;color:var(--lav);margin-bottom:1.25rem;display:flex;align-items:center;gap:10px}
+
+/* GRID */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem}
+.g5{display:grid;grid-template-columns:repeat(5,1fr);gap:1rem}
+.g6{display:grid;grid-template-columns:repeat(6,1fr);gap:1rem}
+
+/* STAT */
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1rem;position:relative;overflow:hidden;transition:all .2s}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--p2),var(--p3))}
+.stat:hover{border-color:var(--borderB);transform:translateY(-2px)}
+.stat-lbl{font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:5px}
+.stat-val{font-family:'Rajdhani',sans-serif;font-size:26px;font-weight:700;color:var(--p4)}
+.stat-sub{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* LEVEL BADGE */
+.lv{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:1px;font-family:'Rajdhani',sans-serif;white-space:nowrap}
+.lv1{background:rgba(100,255,218,.1);color:var(--cyan);border:1px solid rgba(100,255,218,.3)}
+.lv2{background:rgba(156,109,255,.15);color:var(--p4);border:1px solid rgba(156,109,255,.3)}
+.lv3{background:rgba(255,209,102,.1);color:var(--gold);border:1px solid rgba(255,209,102,.3)}
+.lv4{background:rgba(248,113,113,.1);color:var(--err);border:1px solid rgba(248,113,113,.3)}
+.lv5{background:rgba(196,160,255,.15);color:var(--lav);border:1px solid rgba(196,160,255,.4)}
+.lv6{background:rgba(255,110,180,.12);color:var(--pink);border:1px solid rgba(255,110,180,.3)}
+
+/* TABLE */
+.tbl{overflow-x:auto;border-radius:10px;border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--bg2)}
+th{padding:9px 13px;text-align:left;font-size:11px;font-weight:600;color:var(--muted);letter-spacing:1px;text-transform:uppercase;white-space:nowrap}
+td{padding:9px 13px;font-size:13px;border-top:1px solid var(--border);vertical-align:middle}
+tr:hover td{background:rgba(156,109,255,.04)}
+.tdnum{font-family:'Rajdhani',sans-serif;font-size:15px;font-weight:600}
+.grp-row td{background:rgba(76,46,158,.15);font-family:'Rajdhani',sans-serif;font-size:12px;font-weight:600;color:var(--p4);padding:5px 13px;letter-spacing:.5px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 15px;border-radius:8px;font-size:13px;font-weight:500;font-family:'Sarabun',sans-serif;cursor:pointer;border:none;transition:all .2s;white-space:nowrap}
+.btn-pri{background:linear-gradient(135deg,var(--p2),var(--p3));color:#fff;box-shadow:0 0 20px rgba(156,109,255,.25)}
+.btn-pri:hover{box-shadow:0 0 30px rgba(156,109,255,.45);transform:translateY(-1px)}
+.btn-out{background:transparent;border:1px solid var(--borderB);color:var(--p4)}
+.btn-out:hover{background:rgba(156,109,255,.1)}
+.btn-danger{background:rgba(248,113,113,.15);border:1px solid rgba(248,113,113,.3);color:var(--err)}
+.btn-success{background:rgba(74,222,128,.15);border:1px solid rgba(74,222,128,.3);color:var(--ok)}
+.btn-gold{background:rgba(255,209,102,.12);border:1px solid rgba(255,209,102,.3);color:var(--gold)}
+.btn-sm{padding:5px 10px;font-size:12px}
+.btn-xs{padding:3px 7px;font-size:11px}
+
+/* FORM */
+.fg{margin-bottom:.875rem}
+.fl{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;letter-spacing:.5px;font-weight:500}
+.fc{width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--tx);font-size:13px;font-family:'Sarabun',sans-serif;transition:all .2s;outline:none}
+.fc:focus{border-color:var(--p3);box-shadow:0 0 0 3px rgba(156,109,255,.1)}
+select.fc option{background:var(--card)}
+
+/* MODAL */
+.ov{position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.75);backdrop-filter:blur(4px);align-items:center;justify-content:center;display:none}
+.ov.open{display:flex;animation:fadeIn .2s}
+.modal{background:var(--card);border:1px solid var(--borderB);border-radius:16px;padding:1.75rem;width:560px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 0 60px rgba(156,109,255,.25)}
+.modal-lg{width:820px}
+.modal-title{font-family:'Rajdhani',sans-serif;font-size:19px;font-weight:700;color:var(--lav);margin-bottom:1.25rem;display:flex;align-items:center;gap:8px}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;background:var(--card2);border:1px solid var(--borderB);border-radius:10px;padding:10px 18px;display:flex;align-items:center;gap:8px;font-size:13px;box-shadow:var(--sh);display:none}
+
+/* PROGRESS */
+.pb{height:5px;background:var(--bg2);border-radius:99px;overflow:hidden;margin-top:3px}
+.pf{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--p2),var(--p3));transition:width .4s}
+.pf.ok{background:linear-gradient(90deg,#16a34a,var(--ok))}
+.pf.warn{background:linear-gradient(90deg,#b45309,var(--warn))}
+.pf.bad{background:linear-gradient(90deg,#b91c1c,var(--err))}
+
+/* DOT */
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0}
+.dot-g{background:var(--ok);box-shadow:0 0 5px var(--ok)}
+.dot-y{background:var(--warn);box-shadow:0 0 5px var(--warn)}
+.dot-r{background:var(--err);box-shadow:0 0 5px var(--err)}
+
+/* CAT CHIP */
+.chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(156,109,255,.1);border:1px solid var(--border);color:var(--p4)}
+
+/* SEARCH BAR */
+.sbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:1rem;background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:1.25rem}
+
+.sp{height:1.25rem}
+.hr{height:1px;background:var(--border);margin:1rem 0}
+
+/* PENDING BADGE */
+.pending-badge{background:var(--err);color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:4px}
+
+/* LOADING */
+.loading{display:flex;align-items:center;justify-content:center;padding:3rem;color:var(--muted);font-size:14px;gap:10px}
+.spin{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--p3);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* EMPTY */
+.empty{text-align:center;padding:2.5rem;color:var(--muted)}
+.empty .ico{font-size:40px;margin-bottom:.75rem;opacity:.3}
+
+/* BRANCH PAGE */
+.bc{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:1.25rem;transition:all .2s}
+.bc:hover{border-color:var(--borderB)}
+.bc-name{font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:700;color:var(--lav);margin-bottom:.5rem;display:flex;align-items:center;gap:8px}
+
+/* STATUS TAGS */
+.stag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600}
+
+/* REALTIME INDICATOR */
+.rt-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+@media(max-width:900px){.g4,.g5,.g6{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:1fr}.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="login-wrap">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-icon">🤖</div>
+      <div class="login-title">ROBOSTOCK</div>
+      <div class="login-sub">ระบบจัดการสต๊อกอุปกรณ์หุ่นยนต์</div>
+    </div>
+    <div class="login-err" id="loginErr"></div>
+    <div class="fg">
+      <label class="fl">อีเมล</label>
+      <input class="fc" id="loginEmail" type="email" placeholder="admin@robostock.com" autocomplete="email">
+    </div>
+    <div class="fg">
+      <label class="fl">รหัสผ่าน</label>
+      <input class="fc" id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-pri" style="width:100%;justify-content:center;padding:10px" onclick="doLogin()" id="loginBtn">
+      🔐 เข้าสู่ระบบ
+    </button>
+    <div style="text-align:center;margin-top:1rem;font-size:12px;color:var(--dim)">
+      ติดต่อผู้ดูแลระบบเพื่อขอรหัสผ่าน
+    </div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appWrap" style="display:none">
+
+<!-- HEADER -->
+<div class="hdr">
+  <div class="logo">
+    <div class="logo-ic">🤖</div>
+    <div>
+      <div class="logo-tx">ROBOSTOCK</div>
+      <div style="font-size:10px;color:var(--muted);letter-spacing:1px">REALTIME STOCK SYSTEM</div>
+    </div>
+  </div>
+  <div id="nav-area" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"></div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)">
+      <div class="rt-dot"></div> Realtime
+    </div>
+    <div class="user-pill">
+      <span id="userEmail" style="max-width:140px;overflow:hidden;text-overflow:ellipsis"></span>
+      <span class="role-badge" id="userRoleBadge"></span>
+    </div>
+    <button class="btn btn-xs btn-out" onclick="doLogout()">ออก</button>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main" id="mainContent"></div>
+
+</div><!-- /appWrap -->
+
+<!-- MODALS -->
+<!-- Request Modal -->
+<div class="ov" id="m-req">
+  <div class="modal">
+    <div class="modal-title">📮 ส่งคำขอเบิกอุปกรณ์</div>
+    <div class="fg">
+      <label class="fl">สาขา</label>
+      <input class="fc" id="req-branch-name" readonly>
+    </div>
+    <div class="fg">
+      <label class="fl">อุปกรณ์ *</label>
+      <select class="fc" id="req-equip" onchange="updateReqInfo()">
+        <option value="">-- เลือกอุปกรณ์ --</option>
+      </select>
+    </div>
+    <div style="background:var(--bg2);border-radius:8px;padding:10px 14px;margin-bottom:.875rem;font-size:13px" id="req-info">
+      เลือกอุปกรณ์...
+    </div>
+    <div class="fg">
+      <label class="fl">จำนวนที่ขอ *</label>
+      <input class="fc" id="req-qty" type="number" min="1" value="1" oninput="checkReqQty()">
+    </div>
+    <div id="req-warn" style="color:var(--err);font-size:12px;margin-top:-8px;margin-bottom:.5rem;display:none"></div>
+    <div class="fg">
+      <label class="fl">หมายเหตุ</label>
+      <input class="fc" id="req-note" placeholder="เหตุผล / รายละเอียด">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-out" onclick="closeM('m-req')">ยกเลิก</button>
+      <button class="btn btn-pri" onclick="submitRequest()">📮 ส่งคำขอ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Forecast Modal -->
+<div class="ov" id="m-fc">
+  <div class="modal modal-lg">
+    <div class="modal-title">📊 กรอกคาดการณ์ความต้องการ</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1rem" id="fc-info"></div>
+    <div class="tbl">
+      <table>
+        <thead>
+          <tr><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>สต๊อก</th><th>Q/ชุด</th><th>คาดการณ์จำนวนชุด</th><th>รวมชิ้น</th><th>Save 40%</th></tr>
+        </thead>
+        <tbody id="fc-tbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-out" onclick="closeM('m-fc')">ยกเลิก</button>
+      <button class="btn btn-pri" onclick="saveForecast()">💾 บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Equipment Modal (Admin) -->
+<div class="ov" id="m-equip">
+  <div class="modal">
+    <div class="modal-title">⚙️ <span id="equip-modal-title">เพิ่มอุปกรณ์</span></div>
+    <input type="hidden" id="equip-edit-id">
+    <div class="g2">
+      <div class="fg"><label class="fl">รหัส No.</label><input class="fc" id="e-no" placeholder="L1-01"></div>
+      <div class="fg"><label class="fl">Level *</label>
+        <select class="fc" id="e-lv"><option value="1">Level 1</option><option value="2">Level 2</option><option value="3">Level 3</option><option value="4">Level 4</option><option value="5">Level 5</option><option value="6">Level 6</option></select>
+      </div>
+    </div>
+    <div class="fg"><label class="fl">ชื่ออุปกรณ์ *</label><input class="fc" id="e-name" placeholder="ชื่ออุปกรณ์"></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">ประเภท</label><input class="fc" id="e-cat" placeholder="Module, Sensor, Cable..." list="cat-dl"><datalist id="cat-dl"></datalist></div>
+      <div class="fg"><label class="fl">จำนวน/ชุด</label><input class="fc" id="e-qps" type="number" min="1" value="1"></div>
+    </div>
+    <div class="g2">
+      <div class="fg"><label class="fl">สต๊อกปัจจุบัน</label><input class="fc" id="e-stock" type="number" min="0" value="0"></div>
+      <div class="fg"><label class="fl">ราคา/หน่วย (฿)</label><input class="fc" id="e-price" type="number" min="0" value="0" step="0.01"></div>
+    </div>
+    <div class="fg"><label class="fl">SS (Safety Stock)</label><input class="fc" id="e-ss" type="number" min="0" step="0.1" value="0"></div>
+    <div class="fg"><label class="fl">ROP (จุดสั่งซื้อ)</label><input class="fc" id="e-rop" type="number" min="0" step="0.1" value="0"></div>
+    <div class="fg"><label class="fl">EOQ (ปริมาณสั่งซื้อที่เหมาะสม)</label><input class="fc" id="e-eoq" type="number" min="0" step="0.1" value="0"></div>
+    <div class="fg"><label class="fl">หมายเหตุ</label><input class="fc" id="e-note" placeholder="รายละเอียด"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="closeM('m-equip')">ยกเลิก</button>
+      <button class="btn btn-pri" onclick="saveEquip()">💾 บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add User Modal (Admin) -->
+<div class="ov" id="m-user">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">👤 เพิ่มผู้ใช้งาน</div>
+    <div class="fg"><label class="fl">อีเมล *</label><input class="fc" id="u-email" type="email" placeholder="branch@robostock.com"></div>
+    <div class="fg"><label class="fl">รหัสผ่าน *</label><input class="fc" id="u-pass" type="password" placeholder="อย่างน้อย 6 ตัวอักษร"></div>
+    <div class="fg"><label class="fl">ชื่อแสดง</label><input class="fc" id="u-name" placeholder="ชื่อสาขา"></div>
+    <div class="fg">
+      <label class="fl">Role *</label>
+      <select class="fc" id="u-role">
+        <option value="branch">🔵 Branch (สาขาย่อย)</option>
+        <option value="admin">🔴 Admin (ผู้ดูแล)</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label class="fl">สาขา (ถ้า role = branch)</label>
+      <select class="fc" id="u-branch">
+        <option value="">-- เลือกสาขา --</option>
+      </select>
+    </div>
+    <div style="background:rgba(255,209,102,.08);border:1px solid rgba(255,209,102,.2);border-radius:8px;padding:10px;font-size:12px;color:var(--muted);margin-bottom:.5rem">
+      ⚠️ ระบบจะสร้าง account ใน Firebase Auth โดยอัตโนมัติ
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-out" onclick="closeM('m-user')">ยกเลิก</button>
+      <button class="btn btn-pri" onclick="createUser()">✅ สร้างผู้ใช้</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"><span id="t-ico">✅</span><span id="t-msg"></span></div>
+
+<script>
+// ============================================================
+// FIREBASE INIT
+// ============================================================
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ============================================================
+// STATE
+// ============================================================
+let currentUser = null;
+let currentRole = null;
+let currentBranchId = null;
+let currentBranchName = null;
+let equipmentCache = [];
+let branchesCache = [];
+let unsubscribers = [];
+
+// ============================================================
+// SEED EQUIPMENT DATA (from Excel - run once by admin)
+// ============================================================
+const SEED_EQUIP = [{"id":"e001","no":"L1-01","name":"เครื่องชาร์จถ่าน 18650 3.7V 4ก้อน","level":1,"cat":"Power","stock":44,"qtyPerSet":1,"price":160,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":23.9,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e002","no":"L1-02","name":"HC-SR04 Ultrasonic Sensor","level":1,"cat":"Sensor","stock":6,"qtyPerSet":1,"price":40,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":47.81,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e003","no":"L1-03","name":"สายไฟ XH2.54 to DuPont 2.54 4P female Single ยาว 20cm","level":1,"cat":"Cable","stock":43,"qtyPerSet":2,"price":9,"demand":94,"forecast":94,"ss":17.15,"rop":19.22,"eoq":100.79,"save40":38,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e004","no":"L1-04","name":"Mini Digital Voltmeter 0.36 นิ้ว DC 2.7-32V","level":1,"cat":"Sensor","stock":43,"qtyPerSet":1,"price":45,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":45.07,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e005","no":"L1-05","name":"สายไฟ XH2.54 to DuPont 2.54 6P female Single ยาว 20cm","level":1,"cat":"Cable","stock":1,"qtyPerSet":2,"price":12,"demand":94,"forecast":94,"ss":17.15,"rop":19.22,"eoq":87.29,"save40":38,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e006","no":"L1-06","name":"XH2.54 cable connector 2.54mm 2p","level":1,"cat":"Connector","stock":31,"qtyPerSet":2,"price":5,"demand":94,"forecast":94,"ss":17.15,"rop":19.22,"eoq":135.22,"save40":38,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e007","no":"L1-07","name":"สาย Micro USB ยาว 1เมตร สีดำ","level":1,"cat":"Cable","stock":0,"qtyPerSet":1,"price":35,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":51.11,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e008","no":"L1-08","name":"ESP32 NodeMCU Wi-Fi and Bluetooth Module","level":1,"cat":"Module","stock":12,"qtyPerSet":1,"price":195,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":21.65,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e009","no":"L1-09","name":"L298N Motor Drive Module","level":1,"cat":"Module","stock":42,"qtyPerSet":2,"price":60,"demand":94,"forecast":94,"ss":17.15,"rop":19.22,"eoq":39.04,"save40":38,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e010","no":"L1-10","name":"รางถ่าน 18650 แบบอนุกรม 2ก้อน 7.4V","level":1,"cat":"Power","stock":13,"qtyPerSet":1,"price":40,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":47.81,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e011","no":"L1-11","name":"ชุดรถ 4WD Mecanum Wheel Aluminum","level":1,"cat":"Chassis","stock":25,"qtyPerSet":1,"price":590,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":12.45,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e012","no":"L1-12","name":"PCB idektep Electrical circuit","level":1,"cat":"PCB","stock":90,"qtyPerSet":1,"price":190,"demand":47,"forecast":47,"ss":8.57,"rop":10.65,"eoq":21.94,"save40":19,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e013","no":"L1-13","name":"Battery 18650 3.7V","level":1,"cat":"Power","stock":193,"qtyPerSet":2,"price":130,"demand":94,"forecast":94,"ss":17.15,"rop":19.22,"eoq":26.52,"save40":38,"unit":"ก้อน","note":"2 ชิ้น/ชุด"},{"id":"e014","no":"L2-01","name":"DHT22","level":2,"cat":"Sensor","stock":7,"qtyPerSet":1,"price":7,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":71.71,"save40":8,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e015","no":"L2-02","name":"LDR Sensor","level":2,"cat":"Sensor","stock":7,"qtyPerSet":1,"price":30,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":34.64,"save40":8,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e016","no":"L2-03","name":"LCD (Blue Screen) I2C Interface","level":2,"cat":"Display","stock":6,"qtyPerSet":1,"price":75,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":21.91,"save40":8,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e017","no":"L2-04","name":"สายไฟ 3P ยาว 20cm","level":2,"cat":"Cable","stock":31,"qtyPerSet":2,"price":14,"demand":40,"forecast":40,"ss":7.28,"rop":9.16,"eoq":53.45,"save40":16,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e018","no":"L2-05","name":"สายไฟ 4P ยาว 20cm","level":2,"cat":"Cable","stock":28,"qtyPerSet":1,"price":9,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":50.60,"save40":8,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e019","no":"L2-06","name":"Micro USB male to Female","level":2,"cat":"Cable","stock":13,"qtyPerSet":1,"price":56,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":25.35,"save40":8,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e020","no":"L2-07","name":"Switch","level":2,"cat":"Switch","stock":14,"qtyPerSet":2,"price":40,"demand":40,"forecast":40,"ss":7.28,"rop":9.16,"eoq":33.67,"save40":16,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e021","no":"L3-01","name":"Digital Voltmeter","level":3,"cat":"Sensor","stock":36,"qtyPerSet":1,"price":45,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":25.35,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e022","no":"L3-02","name":"Servo Cable Extention ยาว30cm","level":3,"cat":"Cable","stock":19,"qtyPerSet":4,"price":19,"demand":52,"forecast":52,"ss":9.47,"rop":11.35,"eoq":56.16,"save40":21,"unit":"ชิ้น","note":"4 ชิ้น/ชุด"},{"id":"e023","no":"L3-03","name":"น็อตทองเหลืองM3 10mm เสารอง PCB","level":3,"cat":"Fastener","stock":216,"qtyPerSet":1,"price":12,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":46.55,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e024","no":"L3-04","name":"Servo disc","level":3,"cat":"Accessory","stock":24,"qtyPerSet":4,"price":15,"demand":52,"forecast":52,"ss":9.47,"rop":11.35,"eoq":61.98,"save40":21,"unit":"ชิ้น","note":"4 ชิ้น/ชุด"},{"id":"e025","no":"L3-05","name":"สายไฟ 2P ยาว 20cm","level":3,"cat":"Cable","stock":11,"qtyPerSet":2,"price":5,"demand":26,"forecast":26,"ss":4.73,"rop":6.61,"eoq":101.98,"save40":10,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e026","no":"L3-06","name":"สายจั๊มเปอร์ 10cm ผู้-ผู้","level":3,"cat":"Cable","stock":1,"qtyPerSet":1,"price":22,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":36.51,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e027","no":"L3-07","name":"ESP32","level":3,"cat":"Module","stock":10,"qtyPerSet":1,"price":195,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":12.44,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e028","no":"L3-08","name":"Servo driver","level":3,"cat":"Module","stock":1,"qtyPerSet":1,"price":150,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":14.18,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e029","no":"L3-09","name":"Servo EMAX (ES08MAII)","level":3,"cat":"Servo","stock":10,"qtyPerSet":1,"price":130,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":15.24,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e030","no":"L3-10","name":"Servo MG996 (ใหญ่)","level":3,"cat":"Servo","stock":15,"qtyPerSet":4,"price":170,"demand":52,"forecast":52,"ss":9.47,"rop":11.35,"eoq":27.71,"save40":21,"unit":"ชิ้น","note":"4 ชิ้น/ชุด"},{"id":"e031","no":"L3-11","name":"รางถ่าน 2ก้อน","level":3,"cat":"Power","stock":5,"qtyPerSet":1,"price":200,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":13.56,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e032","no":"L3-12","name":"Battery 3.7V","level":3,"cat":"Power","stock":0,"qtyPerSet":2,"price":135,"demand":26,"forecast":26,"ss":4.73,"rop":6.61,"eoq":19.11,"save40":10,"unit":"ก้อน","note":"2 ชิ้น/ชุด"},{"id":"e033","no":"L3-13","name":"PCB Level3","level":3,"cat":"PCB","stock":65,"qtyPerSet":1,"price":190,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":13.28,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e034","no":"L3-14","name":"4P ผู้-เมีย","level":3,"cat":"Connector","stock":22,"qtyPerSet":1,"price":40,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":20.22,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e035","no":"L3-15","name":"4P ผู้-ผู้","level":3,"cat":"Connector","stock":21,"qtyPerSet":1,"price":130,"demand":13,"forecast":13,"ss":2.37,"rop":4.25,"eoq":11.22,"save40":5,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e036","no":"L4-01","name":"Universal standard for MG995 MG996","level":4,"cat":"Accessory","stock":19,"qtyPerSet":1,"price":15,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":30.55,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e037","no":"L4-02","name":"Servo Cable Extention ยาว30cm","level":4,"cat":"Cable","stock":1,"qtyPerSet":2,"price":19,"demand":14,"forecast":14,"ss":2.55,"rop":4.43,"eoq":40.68,"save40":6,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e038","no":"L4-03","name":"รางถ่าน 18650 แบบอนุกรม 3ก้อน 11.1V","level":4,"cat":"Power","stock":5,"qtyPerSet":1,"price":25,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":23.66,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e039","no":"L4-04","name":"Speak Recognition Voice Recognition Module V3","level":4,"cat":"Module","stock":9,"qtyPerSet":1,"price":1050,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":3.65,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e040","no":"L4-05","name":"MG90S Servo Motor 0-180องศา","level":4,"cat":"Servo","stock":11,"qtyPerSet":2,"price":75,"demand":14,"forecast":14,"ss":2.55,"rop":4.43,"eoq":22.94,"save40":6,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e041","no":"L4-06","name":"NeoPixel Ring 12 ดวง WS2812 5050 RGB LED","level":4,"cat":"Module","stock":16,"qtyPerSet":2,"price":45,"demand":14,"forecast":14,"ss":2.55,"rop":4.43,"eoq":29.62,"save40":6,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e042","no":"L4-07","name":"Step Down Regulator Power","level":4,"cat":"Power","stock":7,"qtyPerSet":1,"price":85,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":13.59,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e043","no":"L4-08","name":"LCD Screen 16x2 I2C Interface 5V","level":4,"cat":"Display","stock":6,"qtyPerSet":1,"price":75,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":14.49,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e044","no":"L4-09","name":"โมดูล ESP32-Cam พร้อมกล้อง OV2640","level":4,"cat":"Module","stock":4,"qtyPerSet":1,"price":360,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":6.60,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e045","no":"L4-10","name":"สวิตช์ไฟ KCD1-101 20*15mm สีแดง","level":4,"cat":"Switch","stock":10,"qtyPerSet":1,"price":7,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":44.72,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e046","no":"L4-11","name":"MG995 MG996 ข้อต่อ Servo Bracket","level":4,"cat":"Chassis","stock":10,"qtyPerSet":1,"price":65,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":16.50,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e047","no":"L4-12","name":"ขั้วต่อสายไฟ 2ช่อง CH2 Connector Wire","level":4,"cat":"Connector","stock":10,"qtyPerSet":1,"price":7,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":44.72,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e048","no":"L4-13","name":"Arduino UNO R3 แบบ SMD พร้อมสาย USB","level":4,"cat":"Module","stock":6,"qtyPerSet":1,"price":150,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":11.18,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e049","no":"L4-14","name":"บอร์ดขยายขา V5.0 Sensor Shield for Arduino","level":4,"cat":"Module","stock":7,"qtyPerSet":1,"price":50,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":19.36,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e050","no":"L4-15","name":"Servo MG996 13KG 180องศา high quality","level":4,"cat":"Servo","stock":3,"qtyPerSet":1,"price":170,"demand":7,"forecast":7,"ss":1.28,"rop":3.16,"eoq":9.61,"save40":3,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e051","no":"L4-16","name":"Battery 18650 3.7V (L4)","level":4,"cat":"Power","stock":0,"qtyPerSet":3,"price":130,"demand":21,"forecast":21,"ss":3.82,"rop":5.70,"eoq":15.96,"save40":8,"unit":"ก้อน","note":"3 ชิ้น/ชุด"},{"id":"e052","no":"L5-01","name":"Servo Cable Extention ยาว30cm (L5)","level":5,"cat":"Cable","stock":29,"qtyPerSet":2,"price":19,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":46.07,"save40":8,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e053","no":"L5-02","name":"Switch Red","level":5,"cat":"Switch","stock":7,"qtyPerSet":1,"price":8,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":53.03,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e054","no":"L5-03","name":"Switch Blue","level":5,"cat":"Switch","stock":2,"qtyPerSet":2,"price":8,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":75.0,"save40":8,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e055","no":"L5-04","name":"OLED","level":5,"cat":"Display","stock":11,"qtyPerSet":1,"price":95,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":24.40,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e056","no":"L5-05","name":"Arduino Mega","level":5,"cat":"Module","stock":7,"qtyPerSet":1,"price":590,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":9.79,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e057","no":"L5-06","name":"Servo EMAX (ES08MAII) L5","level":5,"cat":"Servo","stock":0,"qtyPerSet":2,"price":130,"demand":20,"forecast":20,"ss":3.64,"rop":5.52,"eoq":26.73,"save40":8,"unit":"ชิ้น","note":"2 ชิ้น/ชุด"},{"id":"e058","no":"L5-07","name":"สายไฟ 4P ยาว 20cm (L5)","level":5,"cat":"Cable","stock":10,"qtyPerSet":1,"price":9,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":50.60,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e059","no":"L5-08","name":"สายไฟ 6P ยาว 20cm (L5)","level":5,"cat":"Cable","stock":6,"qtyPerSet":1,"price":12,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":43.79,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"},{"id":"e060","no":"L5-09","name":"สายไฟ 3P ยาว 20cm (L5)","level":5,"cat":"Cable","stock":6,"qtyPerSet":1,"price":14,"demand":10,"forecast":10,"ss":1.82,"rop":3.70,"eoq":40.52,"save40":4,"unit":"ชิ้น","note":"1 ชิ้น/ชุด"}];
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function num(n){return(+n||0).toLocaleString('th-TH')}
+function thb(n){return(+n||0).toLocaleString('th-TH',{minimumFractionDigits:0})}
+function lvBadge(l){return`<span class="lv lv${l}">Lv${l}</span>`}
+function closeM(id){document.getElementById(id).classList.remove('open')}
+function openM(id){document.getElementById(id).classList.add('open')}
+function toast(ico,msg,dur=3000){
+  const t=document.getElementById('toast');
+  document.getElementById('t-ico').textContent=ico;
+  document.getElementById('t-msg').textContent=msg;
+  t.style.cssText='display:flex;animation:slideIn .3s ease';
+  setTimeout(()=>t.style.display='none',dur);
+}
+function calcSave(e){return Math.ceil((e.forecast||0)*0.4)}
+function calcReady(e){return (e.stock||0)-calcSave(e)}
+function statusOf(e){
+  const ready=calcReady(e);
+  const belowRop=e.rop&&e.stock<=e.rop;
+  if(ready<=0||belowRop)return'out';
+  if(ready<=calcSave(e)*0.5||ready<3)return'low';
+  return'ok';
+}
+function statusTag(s){
+  if(s==='out')return'<span class="stag" style="background:rgba(248,113,113,.1);color:var(--err)">⚠️ ต้องสั่ง</span>';
+  if(s==='low')return'<span class="stag" style="background:rgba(251,191,36,.1);color:var(--warn)">⚡ ใกล้หมด</span>';
+  return'<span class="stag" style="background:rgba(74,222,128,.1);color:var(--ok)">✅ พร้อม</span>';
+}
+function fmtDate(d){
+  if(!d)return'—';
+  try{const dt=d.toDate?d.toDate():new Date(d);return dt.toLocaleDateString('th-TH',{day:'2-digit',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'});}catch{return String(d).slice(0,10);}
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+auth.onAuthStateChanged(async user => {
+  if(user){
+    currentUser = user;
+    document.getElementById('userEmail').textContent = user.email;
+    // Load user profile from Firestore
+    const profileDoc = await db.collection('users').doc(user.uid).get();
+    if(profileDoc.exists){
+      const profile = profileDoc.data();
+      currentRole = profile.role;
+      currentBranchId = profile.branchId||null;
+      currentBranchName = profile.branchName||null;
+      const badge = document.getElementById('userRoleBadge');
+      badge.textContent = currentRole==='admin'?'Admin':'สาขา: '+(currentBranchName||'?');
+      badge.className = 'role-badge '+(currentRole==='admin'?'role-admin':'role-branch');
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('appWrap').style.display='block';
+      initApp();
+    } else {
+      // New user - show error
+      showLoginErr('ไม่พบข้อมูลผู้ใช้ กรุณาติดต่อผู้ดูแลระบบ');
+      auth.signOut();
+    }
+  } else {
+    currentUser=null; currentRole=null;
+    document.getElementById('loginPage').style.display='flex';
+    document.getElementById('appWrap').style.display='none';
+    unsubscribers.forEach(u=>u()); unsubscribers=[];
+  }
+});
+
+function showLoginErr(msg){
+  const el=document.getElementById('loginErr');
+  el.textContent=msg; el.style.display='block';
+  document.getElementById('loginBtn').textContent='🔐 เข้าสู่ระบบ';
+}
+
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  if(!email||!pass){showLoginErr('กรุณากรอกอีเมลและรหัสผ่าน');return;}
+  document.getElementById('loginBtn').textContent='⏳ กำลังเข้าสู่ระบบ...';
+  document.getElementById('loginErr').style.display='none';
+  try{
+    await auth.signInWithEmailAndPassword(email,pass);
+  } catch(e){
+    const msgs={'auth/user-not-found':'ไม่พบอีเมลนี้ในระบบ','auth/wrong-password':'รหัสผ่านไม่ถูกต้อง','auth/invalid-credential':'อีเมลหรือรหัสผ่านไม่ถูกต้อง','auth/too-many-requests':'ลองมากเกินไป กรุณารอสักครู่'};
+    showLoginErr(msgs[e.code]||e.message);
+  }
+}
+
+function doLogout(){if(confirm('ออกจากระบบ?'))auth.signOut()}
+
+// ============================================================
+// INIT APP
+// ============================================================
+function initApp(){
+  buildNav();
+  loadEquipment();
+}
+
+function buildNav(){
+  const nav = document.getElementById('nav-area');
+  const tabs = currentRole==='admin'
+    ? [['dash','📊 ภาพรวม'],['stock','📦 สต๊อก'],['branches','🏢 สาขา'],['requests','📮 คำขอ'],['users','👥 ผู้ใช้']]
+    : [['dash','📊 สต๊อก'],['myreq','📮 ส่ง Request'],['forecast','📊 คาดการณ์']];
+  nav.innerHTML = '<div class="nav-tabs">'+tabs.map(([id,label])=>
+    `<button class="nav-tab" onclick="showPage('${id}')" id="tab-${id}">${label}</button>`
+  ).join('')+'</div>';
+  showPage(tabs[0][0]);
+}
+
+function showPage(n){
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  const tab=document.getElementById('tab-'+n);
+  if(tab)tab.classList.add('active');
+  const main=document.getElementById('mainContent');
+  unsubscribers.forEach(u=>u()); unsubscribers=[];
+  if(currentRole==='admin'){
+    if(n==='dash') renderAdminDash(main);
+    else if(n==='stock') renderAdminStock(main);
+    else if(n==='branches') renderBranchesPage(main);
+    else if(n==='requests') renderRequestsPage(main);
+    else if(n==='users') renderUsersPage(main);
+  } else {
+    if(n==='dash') renderBranchDash(main);
+    else if(n==='myreq') renderMyRequests(main);
+    else if(n==='forecast') renderForecastPage(main);
+  }
+}
+
+// ============================================================
+// EQUIPMENT — REALTIME
+// ============================================================
+function loadEquipment(){
+  db.collection('equipment').orderBy('level').onSnapshot(snap=>{
+    equipmentCache = snap.docs.map(d=>({id:d.id,...d.data()}));
+  });
+  db.collection('branches').onSnapshot(snap=>{
+    branchesCache = snap.docs.map(d=>({id:d.id,...d.data()}));
+  });
+}
+
+// ============================================================
+// ADMIN DASHBOARD
+// ============================================================
+function renderAdminDash(el){
+  el.innerHTML=`<div class="page active" id="page-dash">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+      <div class="ptitle" style="margin:0">📊 ภาพรวมสต๊อก</div>
+    </div>
+    <div class="g6" style="margin-bottom:1.25rem" id="d-stats">
+      <div class="loading"><div class="spin"></div></div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-hd"><div class="card-title">⚠️ แจ้งเตือน ROP</div><button class="btn btn-xs btn-out" onclick="showPage('stock')">ดูทั้งหมด</button></div>
+        <div id="d-alerts"><div class="loading"><div class="spin"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="card-hd"><div class="card-title">📮 คำขอล่าสุด</div><button class="btn btn-xs btn-out" onclick="showPage('requests')">ดูทั้งหมด</button></div>
+        <div id="d-reqs"><div class="loading"><div class="spin"></div></div></div>
+      </div>
+    </div>
+  </div>`;
+
+  // Live stats
+  const statsUnsub = db.collection('equipment').onSnapshot(snap=>{
+    const items = snap.docs.map(d=>d.data());
+    const total=items.reduce((s,e)=>s+e.stock,0);
+    const totalSave=items.reduce((s,e)=>s+calcSave(e),0);
+    const totalVal=items.reduce((s,e)=>s+(e.price||0)*e.stock,0);
+    const alerts=items.filter(e=>statusOf(e)!=='ok').length;
+    const need=items.filter(e=>e.rop&&e.stock<=e.rop).length;
+    document.getElementById('d-stats').innerHTML=[
+      ['📦','อุปกรณ์',items.length,'รายการ',''],
+      ['🏪','สต๊อกรวม',num(total),'ชิ้น',''],
+      ['🔒','Save 40%',num(totalSave),'ชิ้น','color:var(--gold)'],
+      ['💰','มูลค่า',thb(totalVal),'฿','color:var(--cyan)'],
+      ['⚠️','ถึง ROP',need,'รายการ','color:var(--err)'],
+      ['🏢','สาขา',branchesCache.length,'สาขา',''],
+    ].map(([i,l,v,u,c])=>`<div class="stat"><div class="stat-lbl">${i} ${l}</div><div class="stat-val" style="${c}">${v}</div><div class="stat-sub">${u}</div></div>`).join('');
+
+    // Alerts
+    const alertItems=items.filter(e=>statusOf(e)!=='ok').sort((a,b)=>a.stock-b.stock).slice(0,8);
+    const ae=document.getElementById('d-alerts');
+    if(ae) ae.innerHTML=alertItems.length?alertItems.map(e=>{
+      const s=statusOf(e);
+      const need2=Math.max(0,Math.ceil((e.eoq||0)-e.stock));
+      return`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <span class="dot ${s==='low'?'dot-y':'dot-r'}"></span>
+        <div style="flex:1;font-size:12px"><b>${e.name}</b> ${lvBadge(e.level)}<br>
+        <span style="color:var(--muted)">สต๊อก: ${num(e.stock)} | ROP: ${e.rop||'—'}</span></div>
+        <div style="text-align:right;font-size:12px">${need2>0?`<div style="color:var(--err)">▲${num(need2)}</div>`:''}</div>
+      </div>`;
+    }).join(''):'<div class="empty"><div class="ico">✅</div>สต๊อกอยู่ในเกณฑ์ดี</div>';
+  });
+  unsubscribers.push(statsUnsub);
+
+  // Live recent requests
+  const reqUnsub = db.collection('requests').orderBy('createdAt','desc').limit(8).onSnapshot(snap=>{
+    const el2=document.getElementById('d-reqs');
+    if(!el2)return;
+    if(snap.empty){el2.innerHTML='<div class="empty"><div class="ico">📮</div>ยังไม่มีคำขอ</div>';return;}
+    el2.innerHTML=snap.docs.map(d=>{
+      const r=d.data();
+      const eq=equipmentCache.find(e=>e.id===r.equipId);
+      const col=r.status==='approved'?'var(--ok)':r.status==='rejected'?'var(--err)':'var(--gold)';
+      const lbl=r.status==='approved'?'✅':r.status==='rejected'?'❌':'⏳';
+      return`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;font-size:12px"><b>${eq?eq.name:'?'}</b> ×${r.qty}<br>
+        <span style="color:var(--muted)">${r.branchName||'?'} · ${fmtDate(r.createdAt)}</span></div>
+        <span style="color:${col};font-size:13px">${lbl}</span>
+        ${r.status==='pending'?`<button class="btn btn-success btn-xs" onclick="approveReq('${d.id}')">✅</button>`:''}</div>`;
+    }).join('');
+  });
+  unsubscribers.push(reqUnsub);
+}
+
+// ============================================================
+// ADMIN STOCK PAGE
+// ============================================================
+function renderAdminStock(el){
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">📦 จัดการสต๊อก</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="seedEquipment()">📥 นำเข้าข้อมูลจาก Excel</button>
+      <button class="btn btn-pri btn-sm" onclick="openEquipModal()">＋ เพิ่มอุปกรณ์</button>
+    </div>
+  </div>
+  <div class="sbar">
+    <input class="fc" id="s-q" style="max-width:220px" placeholder="🔍 ค้นหา No./ชื่อ..." oninput="renderStockTable()">
+    <select class="fc" id="s-lv" style="width:110px" onchange="renderStockTable()">
+      <option value="">ทุก Level</option>
+      <option value="1">Level 1</option><option value="2">Level 2</option>
+      <option value="3">Level 3</option><option value="4">Level 4</option>
+      <option value="5">Level 5</option><option value="6">Level 6</option>
+    </select>
+    <select class="fc" id="s-st" style="width:130px" onchange="renderStockTable()">
+      <option value="">ทุกสถานะ</option>
+      <option value="out">⚠️ ต้องสั่ง</option>
+      <option value="low">⚡ ใกล้หมด</option>
+      <option value="ok">✅ พร้อม</option>
+    </select>
+    <div style="font-size:11px;color:var(--dim);display:flex;gap:10px">
+      <span><b style="color:var(--pink)">SS</b>=Safety Stock</span>
+      <span><b style="color:var(--gold)">ROP</b>=จุดสั่ง</span>
+      <span><b style="color:var(--p4)">EOQ</b>=ปริมาณสั่งที่เหมาะ</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="tbl" id="stock-tbl"><div class="loading"><div class="spin"></div></div></div>
+    <div style="margin-top:.75rem;font-size:12px;color:var(--muted);display:flex;justify-content:space-between">
+      <span id="stock-count"></span>
+      <button class="btn btn-out btn-xs" onclick="exportCSV()">📤 Export CSV</button>
+    </div>
+  </div>`;
+
+  const unsub = db.collection('equipment').orderBy('level').onSnapshot(snap=>{
+    equipmentCache = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderStockTable();
+  });
+  unsubscribers.push(unsub);
+}
+
+function renderStockTable(){
+  const q=(document.getElementById('s-q')?.value||'').toLowerCase();
+  const lv=document.getElementById('s-lv')?.value||'';
+  const st=document.getElementById('s-st')?.value||'';
+  let list=equipmentCache.filter(e=>{
+    if(q&&!e.name?.toLowerCase().includes(q)&&!e.no?.toLowerCase().includes(q))return false;
+    if(lv&&String(e.level)!==lv)return false;
+    if(st&&statusOf(e)!==st)return false;
+    return true;
+  });
+  document.getElementById('stock-count').textContent=list.length+' รายการ';
+  const wrap=document.getElementById('stock-tbl');
+  if(!wrap)return;
+  if(!list.length){wrap.innerHTML='<div class="empty"><div class="ico">📦</div>ไม่พบรายการ</div>';return;}
+  wrap.innerHTML=`<table><thead><tr>
+    <th></th><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>ประเภท</th>
+    <th>Q/ชุด</th><th>สต๊อก</th><th style="color:var(--pink)">SS</th>
+    <th style="color:var(--gold)">ROP</th><th>Save 40%</th><th>พร้อมจ่าย</th>
+    <th style="color:var(--p4)">EOQ</th><th>▲ต้องสั่ง</th>
+    <th>ราคา/หน่วย</th><th>สถานะ</th><th></th>
+  </tr></thead><tbody>`+
+  list.map(e=>{
+    const save=calcSave(e); const ready=calcReady(e); const s=statusOf(e);
+    const pct=e.stock?Math.min(100,Math.round(ready/e.stock*100)):0;
+    const pcls=pct>=60?'ok':pct>=30?'warn':'bad';
+    const need=Math.max(0,Math.ceil((e.eoq||0)-e.stock));
+    return`<tr>
+      <td><span class="dot ${s==='ok'?'dot-g':s==='low'?'dot-y':'dot-r'}"></span></td>
+      <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
+      <td style="max-width:180px;font-size:12px"><b>${e.name}</b></td>
+      <td>${lvBadge(e.level)}</td>
+      <td>${e.cat?`<span class="chip">${e.cat}</span>`:'—'}</td>
+      <td class="tdnum" style="color:var(--lav)">${e.qtyPerSet||1}</td>
+      <td><div class="tdnum">${num(e.stock)}</div><div class="pb"><div class="pf ${pcls}" style="width:${pct}%"></div></div></td>
+      <td class="tdnum" style="color:var(--pink);font-size:12px">${e.ss?e.ss.toFixed(1):'—'}</td>
+      <td class="tdnum" style="color:var(--gold);font-size:12px">${e.rop?e.rop.toFixed(1):'—'}</td>
+      <td class="tdnum" style="color:var(--gold)">${num(save)}</td>
+      <td class="tdnum" style="color:${ready>=0?'var(--ok)':'var(--err)'}">${num(ready)}</td>
+      <td class="tdnum" style="color:var(--p4);font-size:12px">${e.eoq?e.eoq.toFixed(1):'—'}</td>
+      <td class="tdnum" style="color:${need>0?'var(--err)':'var(--ok)'};font-weight:700">${need>0?'▲'+num(need):'✓'}</td>
+      <td class="tdnum">${e.price?thb(e.price)+' ฿':'—'}</td>
+      <td>${statusTag(s)}</td>
+      <td><div style="display:flex;gap:3px">
+        <button class="btn btn-out btn-xs" onclick="openEquipModal('${e.id}')">✏️</button>
+        <button class="btn btn-success btn-xs" onclick="adjustStock('${e.id}')">±</button>
+      </div></td>
+    </tr>`;
+  }).join('')+'</tbody></table>';
+}
+
+// ============================================================
+// ADMIN REQUESTS PAGE
+// ============================================================
+function renderRequestsPage(el){
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">📮 คำขอเบิกอุปกรณ์</div>
+    <select class="fc" id="req-filter" style="width:160px" onchange="">
+      <option value="pending">⏳ รอดำเนินการ</option>
+      <option value="all">ทั้งหมด</option>
+      <option value="approved">✅ อนุมัติแล้ว</option>
+      <option value="rejected">❌ ปฏิเสธแล้ว</option>
+    </select>
+  </div>
+  <div class="card">
+    <div class="tbl" id="req-tbl"><div class="loading"><div class="spin"></div></div></div>
+  </div>`;
+
+  const unsub = db.collection('requests').orderBy('createdAt','desc').limit(100).onSnapshot(snap=>{
+    const filter=document.getElementById('req-filter')?.value||'pending';
+    const docs=snap.docs.filter(d=>filter==='all'||d.data().status===filter);
+    const wrap=document.getElementById('req-tbl');
+    if(!wrap)return;
+    if(!docs.length){wrap.innerHTML=`<div class="empty"><div class="ico">📮</div>ไม่มีคำขอ</div>`;return;}
+    wrap.innerHTML=`<table><thead><tr>
+      <th>วันที่</th><th>สาขา</th><th>อุปกรณ์</th><th>Lv</th>
+      <th>จำนวน</th><th>หมายเหตุ</th><th>สถานะ</th><th>จัดการ</th>
+    </tr></thead><tbody>`+
+    docs.map(d=>{
+      const r=d.data();
+      const eq=equipmentCache.find(e=>e.id===r.equipId);
+      const save=eq?calcSave(eq):0;
+      const ready=eq?calcReady(eq):0;
+      const col=r.status==='approved'?'var(--ok)':r.status==='rejected'?'var(--err)':'var(--gold)';
+      const lbl=r.status==='approved'?'✅ อนุมัติ':r.status==='rejected'?'❌ ปฏิเสธ':'⏳ รอ';
+      return`<tr>
+        <td style="font-size:11px;white-space:nowrap">${fmtDate(r.createdAt)}</td>
+        <td><b style="font-size:12px">${r.branchName||'?'}</b></td>
+        <td style="max-width:180px;font-size:12px">${eq?eq.name:'?'}</td>
+        <td>${eq?lvBadge(eq.level):'—'}</td>
+        <td class="tdnum">${num(r.qty)}</td>
+        <td style="font-size:11px;color:var(--muted);max-width:120px">${r.note||'—'}</td>
+        <td><span style="color:${col};font-weight:600;font-size:12px">${lbl}</span></td>
+        <td><div style="display:flex;gap:3px">
+          ${r.status==='pending'?`
+            <button class="btn btn-success btn-xs" onclick="approveReq('${d.id}')">✅ อนุมัติ</button>
+            <button class="btn btn-danger btn-xs" onclick="rejectReq('${d.id}')">❌</button>
+          `:'—'}
+        </div></td>
+      </tr>`;
+    }).join('')+'</tbody></table>';
+
+    // Re-bind filter change
+    document.getElementById('req-filter').onchange = ()=>{
+      const newFilter=document.getElementById('req-filter').value;
+      const allDocs=snap.docs.filter(d=>newFilter==='all'||d.data().status===newFilter);
+      // Re-render logic (just re-trigger snapshot callback) -- simple approach: update innerHTML
+      const wrap2=document.getElementById('req-tbl');
+      if(wrap2&&!allDocs.length){wrap2.innerHTML='<div class="empty"><div class="ico">📮</div>ไม่มีคำขอ</div>';return;}
+      if(wrap2) wrap2.innerHTML=`<table><thead><tr><th>วันที่</th><th>สาขา</th><th>อุปกรณ์</th><th>Lv</th><th>จำนวน</th><th>หมายเหตุ</th><th>สถานะ</th><th>จัดการ</th></tr></thead><tbody>`+
+      allDocs.map(d=>{
+        const r=d.data();
+        const eq=equipmentCache.find(e=>e.id===r.equipId);
+        const col=r.status==='approved'?'var(--ok)':r.status==='rejected'?'var(--err)':'var(--gold)';
+        const lbl=r.status==='approved'?'✅ อนุมัติ':r.status==='rejected'?'❌ ปฏิเสธ':'⏳ รอ';
+        return`<tr>
+          <td style="font-size:11px;white-space:nowrap">${fmtDate(r.createdAt)}</td>
+          <td><b style="font-size:12px">${r.branchName||'?'}</b></td>
+          <td style="font-size:12px;max-width:180px">${eq?eq.name:'?'}</td>
+          <td>${eq?lvBadge(eq.level):'—'}</td>
+          <td class="tdnum">${num(r.qty)}</td>
+          <td style="font-size:11px;color:var(--muted)">${r.note||'—'}</td>
+          <td><span style="color:${col};font-weight:600;font-size:12px">${lbl}</span></td>
+          <td>${r.status==='pending'?`<button class="btn btn-success btn-xs" onclick="approveReq('${d.id}')">✅</button><button class="btn btn-danger btn-xs" onclick="rejectReq('${d.id}')">❌</button>`:'—'}</td>
+        </tr>`;
+      }).join('')+'</tbody></table>';
+    };
+  });
+  unsubscribers.push(unsub);
+}
+
+async function approveReq(id){
+  const doc=await db.collection('requests').doc(id).get();
+  const r=doc.data();
+  const eq=equipmentCache.find(e=>e.id===r.equipId);
+  if(!eq){toast('⚠️','ไม่พบอุปกรณ์');return;}
+  const ready=calcReady(eq);
+  if(r.qty>ready){toast('⚠️',`สต๊อกไม่พอ (พร้อมจ่าย: ${num(ready)})`);return;}
+  const batch=db.batch();
+  batch.update(db.collection('requests').doc(id),{status:'approved',approvedAt:firebase.firestore.FieldValue.serverTimestamp()});
+  batch.update(db.collection('equipment').doc(r.equipId),{stock:firebase.firestore.FieldValue.increment(-r.qty)});
+  await batch.commit();
+  toast('✅','อนุมัติและเบิกสต๊อกแล้ว');
+}
+
+async function rejectReq(id){
+  if(!confirm('ปฏิเสธคำขอนี้?'))return;
+  await db.collection('requests').doc(id).update({status:'rejected'});
+  toast('❌','ปฏิเสธแล้ว');
+}
+
+// ============================================================
+// ADMIN BRANCHES
+// ============================================================
+function renderBranchesPage(el){
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">🏢 สาขาทั้งหมด</div>
+  </div>
+  <div class="g3" id="branch-cards"><div class="loading"><div class="spin"></div></div></div>`;
+
+  const unsub=db.collection('branches').onSnapshot(snap=>{
+    branchesCache=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const el2=document.getElementById('branch-cards');
+    if(!el2)return;
+    if(snap.empty){el2.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="ico">🏢</div>ยังไม่มีสาขา</div>';return;}
+    el2.innerHTML=snap.docs.map(d=>{
+      const b=d.data();
+      const fcTotal=Object.values(b.forecasts||{}).reduce((s,v)=>s+v,0);
+      return`<div class="bc">
+        <div class="bc-name"><span class="dot dot-g"></span>${b.name} <span class="chip" style="font-size:10px">${b.code||''}</span></div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">คาดการณ์รวม: <b style="color:var(--gold)">${num(fcTotal)}</b> ชิ้น</div>
+        <div style="font-size:11px;color:var(--dim)">${b.addr||''}</div>
+      </div>`;
+    }).join('');
+  });
+  unsubscribers.push(unsub);
+}
+
+// ============================================================
+// ADMIN USERS
+// ============================================================
+function renderUsersPage(el){
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">👥 จัดการผู้ใช้</div>
+    <button class="btn btn-pri btn-sm" onclick="openUserModal()">＋ เพิ่มผู้ใช้</button>
+  </div>
+  <div class="card">
+    <div class="tbl" id="users-tbl"><div class="loading"><div class="spin"></div></div></div>
+  </div>`;
+
+  const unsub=db.collection('users').onSnapshot(snap=>{
+    const wrap=document.getElementById('users-tbl');
+    if(!wrap)return;
+    if(snap.empty){wrap.innerHTML='<div class="empty"><div class="ico">👥</div>ยังไม่มีผู้ใช้</div>';return;}
+    wrap.innerHTML=`<table><thead><tr><th>อีเมล</th><th>ชื่อ</th><th>Role</th><th>สาขา</th><th>สถานะ</th></tr></thead><tbody>`+
+    snap.docs.map(d=>{
+      const u=d.data();
+      return`<tr>
+        <td style="font-size:13px">${u.email||'—'}</td>
+        <td>${u.displayName||'—'}</td>
+        <td><span class="role-badge ${u.role==='admin'?'role-admin':'role-branch'}">${u.role==='admin'?'Admin':'Branch'}</span></td>
+        <td>${u.branchName||'—'}</td>
+        <td><span class="dot dot-g"></span></td>
+      </tr>`;
+    }).join('')+'</tbody></table>';
+  });
+  unsubscribers.push(unsub);
+}
+
+function openUserModal(){
+  // Populate branch select
+  const sel=document.getElementById('u-branch');
+  sel.innerHTML='<option value="">-- เลือกสาขา --</option>'+
+    ['KU','SRC','CMU','PSU-HKT','PSU-HDY','NU','VU','PSU-TRUNG'].map(b=>`<option value="${b}">${b}</option>`).join('');
+  openM('m-user');
+}
+
+async function createUser(){
+  const email=document.getElementById('u-email').value.trim();
+  const pass=document.getElementById('u-pass').value;
+  const name=document.getElementById('u-name').value.trim();
+  const role=document.getElementById('u-role').value;
+  const branch=document.getElementById('u-branch').value;
+  if(!email||!pass){toast('⚠️','กรุณากรอกอีเมลและรหัสผ่าน');return;}
+  try{
+    // Create secondary auth to avoid logging out current admin
+    const secondary=firebase.initializeApp(FIREBASE_CONFIG,'secondary_'+Date.now());
+    const secAuth=secondary.auth();
+    const cred=await secAuth.createUserWithEmailAndPassword(email,pass);
+    await db.collection('users').doc(cred.user.uid).set({
+      email, displayName:name, role,
+      branchId:branch||null, branchName:branch||null,
+      createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if(branch){
+      await db.collection('branches').doc(branch).set({
+        name:name||branch, code:branch, addr:'', forecasts:{}, received:{}
+      },{merge:true});
+    }
+    await secAuth.signOut();
+    secondary.delete();
+    closeM('m-user');
+    toast('✅',`สร้างผู้ใช้ ${email} แล้ว`);
+  }catch(e){
+    toast('❌',e.message);
+  }
+}
+
+// ============================================================
+// BRANCH DASHBOARD
+// ============================================================
+function renderBranchDash(el){
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">📦 ดูสต๊อกส่วนกลาง</div>
+    <div style="font-size:13px;color:var(--muted)">สาขา: <b style="color:var(--lav)">${currentBranchName||'?'}</b></div>
+  </div>
+  <div class="sbar">
+    <input class="fc" id="b-q" style="max-width:220px" placeholder="🔍 ค้นหา..." oninput="renderBranchStockTable()">
+    <select class="fc" id="b-lv" style="width:110px" onchange="renderBranchStockTable()">
+      <option value="">ทุก Level</option>
+      <option value="1">Level 1</option><option value="2">Level 2</option>
+      <option value="3">Level 3</option><option value="4">Level 4</option>
+      <option value="5">Level 5</option><option value="6">Level 6</option>
+    </select>
+  </div>
+  <div class="card">
+    <div class="tbl" id="b-stock-tbl"><div class="loading"><div class="spin"></div></div></div>
+  </div>`;
+
+  const unsub=db.collection('equipment').orderBy('level').onSnapshot(snap=>{
+    equipmentCache=snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderBranchStockTable();
+  });
+  unsubscribers.push(unsub);
+}
+
+function renderBranchStockTable(){
+  const q=(document.getElementById('b-q')?.value||'').toLowerCase();
+  const lv=document.getElementById('b-lv')?.value||'';
+  let list=equipmentCache.filter(e=>{
+    if(q&&!e.name?.toLowerCase().includes(q)&&!e.no?.toLowerCase().includes(q))return false;
+    if(lv&&String(e.level)!==lv)return false;
+    return true;
+  });
+  const wrap=document.getElementById('b-stock-tbl');
+  if(!wrap)return;
+  wrap.innerHTML=`<table><thead><tr>
+    <th></th><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>ประเภท</th>
+    <th>Q/ชุด</th><th>สต๊อก</th><th>Save 40%</th><th>พร้อมจ่าย</th><th>สถานะ</th><th></th>
+  </tr></thead><tbody>`+
+  list.map(e=>{
+    const save=calcSave(e);const ready=calcReady(e);const s=statusOf(e);
+    const pct=e.stock?Math.min(100,Math.round(ready/e.stock*100)):0;
+    const pcls=pct>=60?'ok':pct>=30?'warn':'bad';
+    return`<tr>
+      <td><span class="dot ${s==='ok'?'dot-g':s==='low'?'dot-y':'dot-r'}"></span></td>
+      <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
+      <td style="max-width:200px;font-size:12px"><b>${e.name}</b></td>
+      <td>${lvBadge(e.level)}</td>
+      <td>${e.cat?`<span class="chip">${e.cat}</span>`:'—'}</td>
+      <td class="tdnum" style="color:var(--lav)">${e.qtyPerSet||1}</td>
+      <td><div class="tdnum">${num(e.stock)}</div><div class="pb"><div class="pf ${pcls}" style="width:${pct}%"></div></div></td>
+      <td class="tdnum" style="color:var(--gold)">${num(save)}</td>
+      <td class="tdnum" style="color:${ready>=0?'var(--ok)':'var(--err)'}">${num(ready)}</td>
+      <td>${statusTag(s)}</td>
+      <td><button class="btn btn-pri btn-xs" onclick="openRequestModal('${e.id}')">📮 ขอเบิก</button></td>
+    </tr>`;
+  }).join('')+'</tbody></table>';
+}
+
+// ============================================================
+// BRANCH REQUEST
+// ============================================================
+function renderMyRequests(el){
+  el.innerHTML=`
+  <div class="ptitle">📮 คำขอเบิกของฉัน — <span style="font-size:14px;color:var(--muted);font-family:'Sarabun'">${currentBranchName||'?'}</span></div>
+  <div style="margin-bottom:1.25rem">
+    <button class="btn btn-pri" onclick="openRequestModal()">＋ ส่งคำขอใหม่</button>
+  </div>
+  <div class="card">
+    <div class="tbl" id="myreq-tbl"><div class="loading"><div class="spin"></div></div></div>
+  </div>`;
+
+  const unsub=db.collection('requests').where('branchId','==',currentBranchId||currentBranchName).orderBy('createdAt','desc').onSnapshot(snap=>{
+    const wrap=document.getElementById('myreq-tbl');
+    if(!wrap)return;
+    if(snap.empty){wrap.innerHTML='<div class="empty"><div class="ico">📮</div>ยังไม่มีคำขอ</div>';return;}
+    wrap.innerHTML=`<table><thead><tr>
+      <th>วันที่</th><th>อุปกรณ์</th><th>Lv</th><th>จำนวน</th><th>หมายเหตุ</th><th>สถานะ</th>
+    </tr></thead><tbody>`+
+    snap.docs.map(d=>{
+      const r=d.data();
+      const eq=equipmentCache.find(e=>e.id===r.equipId);
+      const col=r.status==='approved'?'var(--ok)':r.status==='rejected'?'var(--err)':'var(--gold)';
+      const lbl=r.status==='approved'?'✅ อนุมัติแล้ว':r.status==='rejected'?'❌ ปฏิเสธ':'⏳ รอดำเนินการ';
+      return`<tr>
+        <td style="font-size:11px;white-space:nowrap">${fmtDate(r.createdAt)}</td>
+        <td style="font-size:12px;max-width:200px">${eq?eq.name:'?'}</td>
+        <td>${eq?lvBadge(eq.level):'—'}</td>
+        <td class="tdnum">${num(r.qty)}</td>
+        <td style="font-size:11px;color:var(--muted)">${r.note||'—'}</td>
+        <td><span style="color:${col};font-weight:600;font-size:12px">${lbl}</span></td>
+      </tr>`;
+    }).join('')+'</tbody></table>';
+  });
+  unsubscribers.push(unsub);
+}
+
+// ============================================================
+// BRANCH FORECAST
+// ============================================================
+function renderForecastPage(el){
+  el.innerHTML=`
+  <div class="ptitle">📊 กรอกคาดการณ์ความต้องการ — <span style="font-size:14px;color:var(--muted);font-family:'Sarabun'">${currentBranchName||'?'}</span></div>
+  <div class="card">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:1rem">กรอกจำนวน <b>ชุด</b> ที่คาดว่าจะต้องการ ระบบจะคำนวณจำนวนชิ้นให้อัตโนมัติ</div>
+    <div class="tbl" id="fc-tbl"><div class="loading"><div class="spin"></div></div></div>
+    <div style="margin-top:1.25rem;display:flex;justify-content:flex-end">
+      <button class="btn btn-pri" onclick="saveForecastDirect()">💾 บันทึกคาดการณ์</button>
+    </div>
+  </div>`;
+
+  const bid=currentBranchId||currentBranchName;
+  db.collection('branches').doc(bid).get().then(bdoc=>{
+    const bdata=bdoc.exists?bdoc.data():{forecasts:{}};
+    const unsub=db.collection('equipment').orderBy('level').onSnapshot(snap=>{
+      equipmentCache=snap.docs.map(d=>({id:d.id,...d.data()}));
+      const wrap=document.getElementById('fc-tbl');
+      if(!wrap)return;
+      wrap.innerHTML=`<table><thead><tr>
+        <th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>Q/ชุด</th><th>สต๊อก</th>
+        <th>จำนวนชุดที่ต้องการ</th><th>รวมชิ้น</th><th>Save 40%</th>
+      </tr></thead><tbody>`+
+      equipmentCache.map(e=>{
+        const fcSets=bdata.forecasts?.[e.id]||0;
+        const fcPcs=fcSets*(e.qtyPerSet||1);
+        const save=Math.ceil(fcPcs*0.4);
+        return`<tr>
+          <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
+          <td style="font-size:12px;max-width:180px">${e.name}</td>
+          <td>${lvBadge(e.level)}</td>
+          <td class="tdnum" style="color:var(--lav)">${e.qtyPerSet||1}</td>
+          <td class="tdnum">${num(e.stock)}</td>
+          <td><input type="number" id="fc-${e.id}" value="${fcSets}" min="0"
+            style="width:80px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--tx);font-family:'Rajdhani',sans-serif;font-size:15px"
+            oninput="updateFcRow('${e.id}',${e.qtyPerSet||1})"></td>
+          <td class="tdnum" id="fc-pcs-${e.id}" style="color:var(--gold)">${num(fcPcs)}</td>
+          <td class="tdnum" id="fc-save-${e.id}" style="color:var(--pink)">${num(save)}</td>
+        </tr>`;
+      }).join('')+'</tbody></table>';
+    });
+    unsubscribers.push(unsub);
+  });
+}
+
+function updateFcRow(eid,qps){
+  const sets=parseInt(document.getElementById('fc-'+eid)?.value)||0;
+  const pcs=sets*qps;
+  const save=Math.ceil(pcs*0.4);
+  const p=document.getElementById('fc-pcs-'+eid);
+  const s=document.getElementById('fc-save-'+eid);
+  if(p)p.textContent=num(pcs);
+  if(s)s.textContent=num(save);
+}
+
+async function saveForecastDirect(){
+  const bid=currentBranchId||currentBranchName;
+  const forecasts={};
+  equipmentCache.forEach(e=>{
+    const v=parseInt(document.getElementById('fc-'+e.id)?.value)||0;
+    if(v>0) forecasts[e.id]=v;
+  });
+  await db.collection('branches').doc(bid).set({
+    name:currentBranchName, code:currentBranchName, forecasts,
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  },{merge:true});
+  toast('✅','บันทึกคาดการณ์แล้ว');
+}
+
+// ============================================================
+// REQUEST MODAL
+// ============================================================
+function openRequestModal(equipId=null){
+  const sel=document.getElementById('req-equip');
+  sel.innerHTML='<option value="">-- เลือกอุปกรณ์ --</option>'+
+    [...equipmentCache].sort((a,b)=>a.level-b.level)
+    .map(e=>`<option value="${e.id}" ${e.id===equipId?'selected':''}>${e.no?' ['+e.no+'] ':''} ${e.name} (Lv${e.level})</option>`).join('');
+  document.getElementById('req-branch-name').value=currentBranchName||'?';
+  document.getElementById('req-qty').value=1;
+  document.getElementById('req-note').value='';
+  document.getElementById('req-warn').style.display='none';
+  if(equipId){sel.value=equipId;updateReqInfo();}
+  else document.getElementById('req-info').innerHTML='เลือกอุปกรณ์...';
+  openM('m-req');
+}
+
+function updateReqInfo(){
+  const eid=document.getElementById('req-equip').value;
+  if(!eid){document.getElementById('req-info').innerHTML='เลือกอุปกรณ์...';return;}
+  const e=equipmentCache.find(x=>x.id===eid);
+  const save=calcSave(e); const ready=calcReady(e);
+  document.getElementById('req-info').innerHTML=
+    `สต๊อก: <b>${num(e.stock)}</b> | Save 40%: <b style="color:var(--gold)">${num(save)}</b> | พร้อมจ่าย: <b style="color:${ready>0?'var(--ok)':'var(--err)'}">${num(ready)} ${e.unit||'ชิ้น'}</b>`;
+}
+
+function checkReqQty(){
+  const eid=document.getElementById('req-equip').value;
+  const qty=parseInt(document.getElementById('req-qty').value)||0;
+  const warn=document.getElementById('req-warn');
+  if(!eid){warn.style.display='none';return;}
+  const e=equipmentCache.find(x=>x.id===eid);
+  const ready=calcReady(e);
+  if(qty>ready){warn.textContent=`⚠️ เกินพร้อมจ่าย (${num(ready)})`;warn.style.display='block';}
+  else warn.style.display='none';
+}
+
+async function submitRequest(){
+  const eid=document.getElementById('req-equip').value;
+  const qty=parseInt(document.getElementById('req-qty').value)||0;
+  if(!eid||qty<=0){toast('⚠️','กรุณาเลือกอุปกรณ์และจำนวน');return;}
+  await db.collection('requests').add({
+    equipId:eid, qty,
+    branchId:currentBranchId||currentBranchName,
+    branchName:currentBranchName,
+    note:document.getElementById('req-note').value,
+    status:'pending',
+    createdAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+  closeM('m-req');
+  toast('📮','ส่งคำขอแล้ว รอ Admin อนุมัติ');
+}
+
+// ============================================================
+// EQUIPMENT CRUD (Admin)
+// ============================================================
+function openEquipModal(id=null){
+  document.getElementById('equip-edit-id').value=id||'';
+  document.getElementById('equip-modal-title').textContent=id?'แก้ไขอุปกรณ์':'เพิ่มอุปกรณ์';
+  const e=id?equipmentCache.find(x=>x.id===id):null;
+  ['e-no','e-name','e-cat','e-note'].forEach(f=>document.getElementById(f).value=e?e[f.replace('e-','')]||'':'');
+  document.getElementById('e-lv').value=e?e.level:1;
+  document.getElementById('e-qps').value=e?e.qtyPerSet:1;
+  document.getElementById('e-stock').value=e?e.stock:0;
+  document.getElementById('e-price').value=e?e.price:0;
+  document.getElementById('e-ss').value=e?e.ss:0;
+  document.getElementById('e-rop').value=e?e.rop:0;
+  document.getElementById('e-eoq').value=e?e.eoq:0;
+  // Cats datalist
+  const cats=[...new Set(equipmentCache.map(x=>x.cat).filter(Boolean))];
+  document.getElementById('cat-dl').innerHTML=cats.map(c=>`<option value="${c}">`).join('');
+  openM('m-equip');
+}
+
+async function saveEquip(){
+  const name=document.getElementById('e-name').value.trim();
+  if(!name){toast('⚠️','กรุณากรอกชื่อ');return;}
+  const id=document.getElementById('equip-edit-id').value;
+  const obj={
+    no:document.getElementById('e-no').value.trim(),
+    name, level:+document.getElementById('e-lv').value,
+    cat:document.getElementById('e-cat').value.trim(),
+    qtyPerSet:+document.getElementById('e-qps').value||1,
+    stock:+document.getElementById('e-stock').value||0,
+    price:+document.getElementById('e-price').value||0,
+    ss:+document.getElementById('e-ss').value||0,
+    rop:+document.getElementById('e-rop').value||0,
+    eoq:+document.getElementById('e-eoq').value||0,
+    forecast:+document.getElementById('e-stock').value||0,
+    unit:'ชิ้น',
+    note:document.getElementById('e-note').value,
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  };
+  obj.save40=Math.ceil(obj.forecast*0.4);
+  if(id) await db.collection('equipment').doc(id).update(obj);
+  else await db.collection('equipment').add(obj);
+  closeM('m-equip');
+  toast('✅',id?'แก้ไขแล้ว':'เพิ่มอุปกรณ์แล้ว');
+}
+
+async function adjustStock(id){
+  const e=equipmentCache.find(x=>x.id===id);
+  const delta=parseInt(prompt(`ปรับสต๊อก "${e.name}"\nสต๊อกปัจจุบัน: ${e.stock}\nกรอก +100 เพื่อเพิ่ม หรือ -10 เพื่อลด`)||'0');
+  if(isNaN(delta)||delta===0)return;
+  const newStock=Math.max(0,e.stock+delta);
+  await db.collection('equipment').doc(id).update({stock:newStock});
+  toast('✅',`ปรับสต๊อกเป็น ${newStock} แล้ว`);
+}
+
+// ============================================================
+// SEED EQUIPMENT FROM EXCEL DATA
+// ============================================================
+async function seedEquipment(){
+  if(!confirm(`นำเข้าข้อมูล ${SEED_EQUIP.length} รายการจาก Excel?\n\nรายการที่มีอยู่แล้วจะถูกอัปเดต`))return;
+  toast('⏳','กำลังนำเข้าข้อมูล...',10000);
+  const batch=db.batch();
+  SEED_EQUIP.forEach(e=>{
+    const ref=db.collection('equipment').doc(e.id);
+    batch.set(ref,{...e,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+  });
+  await batch.commit();
+  toast('✅',`นำเข้า ${SEED_EQUIP.length} รายการเรียบร้อย`);
+}
+
+// ============================================================
+// EXPORT CSV
+// ============================================================
+function exportCSV(){
+  const rows=[['No','ชื่อ','Level','ประเภท','Q/ชุด','สต๊อก','SS','ROP','Save40%','พร้อมจ่าย','EOQ','ต้องสั่ง','ราคา']];
+  equipmentCache.forEach(e=>{
+    const save=calcSave(e);const ready=calcReady(e);const need=Math.max(0,Math.ceil((e.eoq||0)-e.stock));
+    rows.push([e.no,e.name,'Level '+e.level,e.cat,e.qtyPerSet||1,e.stock,e.ss||0,e.rop||0,save,ready,e.eoq||0,need,e.price||0]);
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download='robostock_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  toast('📤','Export CSV แล้ว');
+}
+
+// ============================================================
+// FIRST TIME SETUP HELPER
+// ============================================================
+async function firstTimeSetup(){
+  // Create admin user profile if not exists (call manually from console)
+  const user=auth.currentUser;
+  if(!user)return;
+  await db.collection('users').doc(user.uid).set({
+    email:user.email, displayName:'Admin', role:'admin',
+    branchId:null, branchName:null,
+    createdAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+  alert('สร้างโปรไฟล์ Admin แล้ว กรุณา Refresh หน้า');
+}
+// Expose for manual call
+window.firstTimeSetup=firstTimeSetup;
+</script>
+</body>
+</html>
