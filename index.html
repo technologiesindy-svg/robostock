@@ -492,7 +492,7 @@ function buildNav(){
   const nav = document.getElementById('nav-area');
   const tabs = currentRole==='admin'
     ? [['dash','📊 ภาพรวม'],['stock','📦 สต๊อก'],['branches','🏢 สาขา'],['requests','📮 คำขอ'],['users','👥 ผู้ใช้']]
-    : [['dash','📊 สต๊อก'],['myreq','📮 ส่ง Request'],['forecast','📊 คาดการณ์']];
+    : [['dash','📦 สต๊อกส่วนกลาง'],['mystock','🏪 สต๊อกสาขาฉัน'],['myreq','📮 ส่ง Request'],['forecast','📊 คาดการณ์']];
   nav.innerHTML = '<div class="nav-tabs">'+tabs.map(([id,label])=>
     `<button class="nav-tab" onclick="showPage('${id}')" id="tab-${id}">${label}</button>`
   ).join('')+'</div>';
@@ -513,6 +513,7 @@ function showPage(n){
     else if(n==='users') renderUsersPage(main);
   } else {
     if(n==='dash') renderBranchDash(main);
+    else if(n==='mystock') renderBranchOwnStock(main);
     else if(n==='myreq') renderMyRequests(main);
     else if(n==='forecast') renderForecastPage(main);
   }
@@ -543,13 +544,17 @@ function renderAdminDash(el){
     </div>
     <div class="g2">
       <div class="card">
-        <div class="card-hd"><div class="card-title">⚠️ แจ้งเตือน ROP</div><button class="btn btn-xs btn-out" onclick="showPage('stock')">ดูทั้งหมด</button></div>
+        <div class="card-hd"><div class="card-title">⚠️ แจ้งเตือน ROP (สต๊อกกลาง)</div><button class="btn btn-xs btn-out" onclick="showPage('stock')">ดูทั้งหมด</button></div>
         <div id="d-alerts"><div class="loading"><div class="spin"></div></div></div>
       </div>
       <div class="card">
-        <div class="card-hd"><div class="card-title">📮 คำขอล่าสุด</div><button class="btn btn-xs btn-out" onclick="showPage('requests')">ดูทั้งหมด</button></div>
-        <div id="d-reqs"><div class="loading"><div class="spin"></div></div></div>
+        <div class="card-hd"><div class="card-title">🏢 แจ้งเตือนสาขาสต๊อกต่ำ</div><button class="btn btn-xs btn-out" onclick="showPage('branches')">ดูทั้งหมด</button></div>
+        <div id="d-branch-alerts"><div class="loading"><div class="spin"></div></div></div>
       </div>
+    </div>
+    <div class="card" style="margin-top:1.25rem">
+      <div class="card-hd"><div class="card-title">📮 คำขอล่าสุด</div><button class="btn btn-xs btn-out" onclick="showPage('requests')">ดูทั้งหมด</button></div>
+      <div id="d-reqs"><div class="loading"><div class="spin"></div></div></div>
     </div>
   </div>`;
 
@@ -585,6 +590,36 @@ function renderAdminDash(el){
     }).join(''):'<div class="empty"><div class="ico">✅</div>สต๊อกอยู่ในเกณฑ์ดี</div>';
   });
   unsubscribers.push(statsUnsub);
+
+  // Live branch low-stock alerts
+  const branchAlertUnsub=db.collection('branchStock').onSnapshot(snap=>{
+    const el2=document.getElementById('d-branch-alerts');
+    if(!el2)return;
+    if(snap.empty){el2.innerHTML='<div class="empty"><div class="ico">🏢</div>ยังไม่มีสาขาบันทึกสต๊อก</div>';return;}
+    const alerts=[];
+    snap.docs.forEach(d=>{
+      const b=d.data();
+      const bStock=b.stock||{};
+      equipmentCache.forEach(e=>{
+        const v=bStock[e.id]||0;
+        const save=calcSave(e);
+        if(v<save&&v===0) alerts.push({branch:b.branchName,eq:e,v,save,sev:'err'});
+        else if(v<save) alerts.push({branch:b.branchName,eq:e,v,save,sev:'warn'});
+      });
+    });
+    alerts.sort((a,b)=>a.sev==='err'?-1:1);
+    const top=alerts.slice(0,8);
+    if(!top.length){el2.innerHTML='<div class="empty"><div class="ico">✅</div>ทุกสาขาสต๊อกอยู่ในเกณฑ์ดี</div>';return;}
+    el2.innerHTML=top.map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">
+      <span class="dot ${a.sev==='err'?'dot-r':'dot-y'}"></span>
+      <div style="flex:1;font-size:12px">
+        <b>${a.branch}</b> · ${a.eq.name} ${lvBadge(a.eq.level)}<br>
+        <span style="color:var(--muted)">มี: ${a.v} | Save: ${a.save}</span>
+      </div>
+      <span style="color:${a.sev==='err'?'var(--err)':'var(--warn)'};font-size:12px">${a.sev==='err'?'🔴 หมด':'🟡 น้อย'}</span>
+    </div>`).join('');
+  });
+  unsubscribers.push(branchAlertUnsub);
 
   // Live recent requests
   const reqUnsub = db.collection('requests').orderBy('createdAt','desc').limit(8).onSnapshot(snap=>{
@@ -810,26 +845,123 @@ async function rejectReq(id){
 function renderBranchesPage(el){
   el.innerHTML=`
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
-    <div class="ptitle" style="margin:0">🏢 สาขาทั้งหมด</div>
+    <div class="ptitle" style="margin:0">🏢 สต๊อกทุกสาขา</div>
+    <div style="display:flex;gap:8px">
+      <select class="fc" id="admin-lv-filter" style="width:120px" onchange="renderBranchStockAdmin()">
+        <option value="">ทุก Level</option>
+        <option value="1">Level 1</option><option value="2">Level 2</option>
+        <option value="3">Level 3</option><option value="4">Level 4</option>
+        <option value="5">Level 5</option><option value="6">Level 6</option>
+      </select>
+      <button class="btn btn-out btn-sm" onclick="exportAllBranchCSV()">📤 Export รวม</button>
+    </div>
   </div>
-  <div class="g3" id="branch-cards"><div class="loading"><div class="spin"></div></div></div>`;
+  <div class="g4" style="margin-bottom:1.25rem" id="branch-summary-cards">
+    <div class="loading"><div class="spin"></div></div>
+  </div>
+  <div class="card">
+    <div class="card-hd">
+      <div class="card-title">📊 เปรียบเทียบสต๊อกทุกสาขาต่ออุปกรณ์</div>
+      <div style="font-size:11px;color:var(--dim)">🟢 = พอ | 🟡 = น้อย | 🔴 = ไม่มี | — = ยังไม่บันทึก</div>
+    </div>
+    <div class="tbl" id="branch-cmp-tbl"><div class="loading"><div class="spin"></div></div></div>
+  </div>`;
 
-  const unsub=db.collection('branches').onSnapshot(snap=>{
-    branchesCache=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const el2=document.getElementById('branch-cards');
-    if(!el2)return;
-    if(snap.empty){el2.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="ico">🏢</div>ยังไม่มีสาขา</div>';return;}
-    el2.innerHTML=snap.docs.map(d=>{
-      const b=d.data();
-      const fcTotal=Object.values(b.forecasts||{}).reduce((s,v)=>s+v,0);
-      return`<div class="bc">
-        <div class="bc-name"><span class="dot dot-g"></span>${b.name} <span class="chip" style="font-size:10px">${b.code||''}</span></div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">คาดการณ์รวม: <b style="color:var(--gold)">${num(fcTotal)}</b> ชิ้น</div>
-        <div style="font-size:11px;color:var(--dim)">${b.addr||''}</div>
-      </div>`;
-    }).join('');
+  let allBranchStock={};
+  // Load all branch stocks
+  db.collection('branchStock').get().then(snap=>{
+    snap.docs.forEach(d=>{ allBranchStock[d.id]=d.data().stock||{}; });
+    const unsub=db.collection('equipment').orderBy('level').onSnapshot(snap2=>{
+      equipmentCache=snap2.docs.map(d=>({id:d.id,...d.data()}));
+      renderBranchStockAdmin(allBranchStock);
+    });
+    unsubscribers.push(unsub);
   });
-  unsubscribers.push(unsub);
+
+  const bUnsub=db.collection('branchStock').onSnapshot(snap=>{
+    snap.docs.forEach(d=>{ allBranchStock[d.id]=d.data().stock||{}; });
+    renderBranchStockAdmin(allBranchStock);
+  });
+  unsubscribers.push(bUnsub);
+}
+
+let _adminBranchStockCache={};
+function renderBranchStockAdmin(allBranchStock){
+  if(allBranchStock) _adminBranchStockCache=allBranchStock;
+  else allBranchStock=_adminBranchStockCache;
+  const BRANCHES=['KU','SRC','CMU','PSU-HKT','PSU-HDY','NU','VU','PSU-TRUNG'];
+  const lv=document.getElementById('admin-lv-filter')?.value||'';
+  const items=equipmentCache.filter(e=>!lv||String(e.level)===lv);
+
+  // Summary cards + low-stock alerts
+  const cards=document.getElementById('branch-summary-cards');
+  if(cards) cards.innerHTML=BRANCHES.map(b=>{
+    const bStock=allBranchStock[b]||{};
+    const total=Object.values(bStock).reduce((s,v)=>s+v,0);
+    const hasData=Object.keys(bStock).length>0;
+    const lowItems=items.filter(e=>{ const v=bStock[e.id]||0; return hasData&&v<calcSave(e); }).length;
+    const zeroItems=items.filter(e=>{ const v=bStock[e.id]||0; return hasData&&v===0; }).length;
+    const alertColor=!hasData?'var(--dim)':zeroItems>0?'var(--err)':lowItems>0?'var(--warn)':'var(--ok)';
+    const alertIco=!hasData?'—':zeroItems>0?'🔴':lowItems>0?'🟡':'🟢';
+    return`<div class="stat">
+      <div class="stat-lbl">🏢 ${b}</div>
+      <div class="stat-val" style="color:${alertColor}">${hasData?num(total):'—'}</div>
+      <div class="stat-sub" style="color:${alertColor}">${alertIco} ${hasData?`${zeroItems} หมด · ${lowItems} น้อย`:'ยังไม่บันทึก'}</div>
+    </div>`;
+  }).join('');
+
+  // Comparison table
+  const wrap=document.getElementById('branch-cmp-tbl');
+  if(!wrap)return;
+  if(!items.length){wrap.innerHTML='<div class="empty"><div class="ico">📦</div>ไม่พบรายการ</div>';return;}
+
+  const BCOLS=BRANCHES.map(b=>`<th style="min-width:55px;text-align:center;font-size:10px">${b}</th>`).join('');
+  let html=`<table><thead><tr>
+    <th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>Save40%</th>
+    ${BCOLS}<th>สต๊อกกลาง</th>
+  </tr></thead><tbody>`;
+
+  const levels=[...new Set(items.map(e=>e.level))].sort();
+  levels.forEach(lv=>{
+    const lvItems=items.filter(e=>e.level===lv);
+    html+=`<tr class="grp-row"><td colspan="${6+BRANCHES.length}">Level ${lv} — ${lvItems.length} รายการ</td></tr>`;
+    lvItems.forEach(e=>{
+      const save=calcSave(e);
+      const cells=BRANCHES.map(b=>{
+        const bStock=allBranchStock[b]||{};
+        if(!Object.keys(allBranchStock[b]||{}).length) return`<td style="text-align:center;color:var(--dim);font-size:11px">—</td>`;
+        const v=bStock[e.id]||0;
+        const col=v===0?'var(--err)':v>=save?'var(--ok)':'var(--warn)';
+        const ico=v===0?'🔴':v>=save?'🟢':'🟡';
+        return`<td style="text-align:center"><span style="color:${col};font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:700" title="${b}: ${v} ชิ้น (Save: ${save})">${ico} ${v}</span></td>`;
+      }).join('');
+      html+=`<tr>
+        <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
+        <td style="font-size:12px;max-width:160px">${e.name}</td>
+        <td>${lvBadge(e.level)}</td>
+        <td class="tdnum" style="color:var(--gold)">${num(save)}</td>
+        ${cells}
+        <td class="tdnum" style="color:var(--muted)">${num(e.stock)}</td>
+      </tr>`;
+    });
+  });
+  html+='</tbody></table>';
+  wrap.innerHTML=html;
+}
+
+function exportAllBranchCSV(){
+  const BRANCHES=['KU','SRC','CMU','PSU-HKT','PSU-HDY','NU','VU','PSU-TRUNG'];
+  const rows=[['No','ชื่ออุปกรณ์','Level','Save40%',...BRANCHES,'สต๊อกกลาง']];
+  equipmentCache.forEach(e=>{
+    const save=calcSave(e);
+    const bVals=BRANCHES.map(b=>(_adminBranchStockCache[b]||{})[e.id]||0);
+    rows.push([e.no,e.name,'Level '+e.level,save,...bVals,e.stock]);
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download=`robostock_all_branches_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('📤','Export รายงานรวมแล้ว');
 }
 
 // ============================================================
@@ -904,7 +1036,209 @@ async function createUser(){
 }
 
 // ============================================================
-// BRANCH DASHBOARD
+// BRANCH OWN STOCK PAGE
+// ============================================================
+function renderBranchOwnStock(el){
+  const bid=currentBranchId||currentBranchName;
+  el.innerHTML=`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:1rem">
+    <div class="ptitle" style="margin:0">🏪 สต๊อกสาขา — <span style="font-size:14px;color:var(--muted);font-family:'Sarabun'">${currentBranchName||'?'}</span></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-gold btn-sm" onclick="saveOwnStock()">💾 บันทึกสต๊อก</button>
+      <button class="btn btn-out btn-sm" onclick="exportBranchCSV()">📤 Export CSV</button>
+    </div>
+  </div>
+  <div style="background:rgba(255,209,102,.08);border:1px solid rgba(255,209,102,.25);border-radius:10px;padding:12px 16px;margin-bottom:1.25rem;font-size:13px;color:var(--muted)">
+    📝 กรอกจำนวนอุปกรณ์ที่สาขามีจริง ณ ปัจจุบัน แล้วกด <b style="color:var(--gold)">💾 บันทึกสต๊อก</b> — ระบบจะเก็บประวัติรายเดือนให้อัตโนมัติ
+  </div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:1rem;padding:10px 14px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+    <span style="font-size:11px;color:var(--muted);white-space:nowrap">📅 ประวัติ:</span>
+    <div id="bs-history" style="display:flex;gap:6px;flex-wrap:wrap"><div class="spin" style="width:14px;height:14px"></div></div>
+  </div>
+  <div class="sbar">
+    <input class="fc" id="bs-q" style="max-width:220px" placeholder="🔍 ค้นหา..." oninput="filterBranchStockTable()">
+    <select class="fc" id="bs-lv" style="width:110px" onchange="filterBranchStockTable()">
+      <option value="">ทุก Level</option>
+      <option value="1">Level 1</option><option value="2">Level 2</option>
+      <option value="3">Level 3</option><option value="4">Level 4</option>
+      <option value="5">Level 5</option><option value="6">Level 6</option>
+    </select>
+    <select class="fc" id="bs-st" style="width:130px" onchange="filterBranchStockTable()">
+      <option value="">ทุกสถานะ</option>
+      <option value="out">⚠️ หมด/ต่ำ</option>
+      <option value="ok">✅ มีพอ</option>
+    </select>
+  </div>
+  <div class="card">
+    <div class="tbl" id="bs-tbl"><div class="loading"><div class="spin"></div></div></div>
+    <div style="margin-top:.75rem;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;align-items:center">
+      <span id="bs-count"></span>
+      <span id="bs-updated" style="color:var(--dim)"></span>
+    </div>
+  </div>`;
+
+  // Load branch stock data + history
+  let branchStockData = {};
+  db.collection('branchStock').doc(bid).get().then(doc=>{
+    if(doc.exists){
+      branchStockData = doc.data().stock||{};
+      const upd=doc.data().updatedAt;
+      if(upd){
+        const d=upd.toDate();
+        const el2=document.getElementById('bs-updated');
+        if(el2) el2.textContent=`บันทึกล่าสุด: ${d.toLocaleDateString('th-TH',{month:'long',year:'numeric'})}`;
+      }
+    }
+    // Load history
+    db.collection('branchStockHistory')
+      .where('branchId','==',bid)
+      .orderBy('monthKey','desc')
+      .limit(12)
+      .get().then(hSnap=>{
+        const hEl=document.getElementById('bs-history');
+        if(!hEl)return;
+        if(hSnap.empty){hEl.innerHTML='<span style="color:var(--dim)">ยังไม่มีประวัติ</span>';return;}
+        hEl.innerHTML=hSnap.docs.map(d=>{
+          const h=d.data();
+          const total=Object.values(h.stock||{}).reduce((s,v)=>s+v,0);
+          const [yr,mo]=h.monthKey.split('-');
+          const label=new Date(+yr,+mo-1).toLocaleDateString('th-TH',{month:'short',year:'numeric'});
+          return`<button class="btn btn-out btn-xs" onclick="loadHistoryMonth('${h.monthKey}')" title="โหลดข้อมูลเดือน ${label}">${label} (${num(total)})</button>`;
+        }).join('');
+      });
+    const unsub = db.collection('equipment').orderBy('level').onSnapshot(snap=>{
+      equipmentCache = snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderBranchStockTable(branchStockData);
+    });
+    unsubscribers.push(unsub);
+  });
+}
+
+function renderBranchStockTable(stockData={}){
+  const q=(document.getElementById('bs-q')?.value||'').toLowerCase();
+  const lv=document.getElementById('bs-lv')?.value||'';
+  const st=document.getElementById('bs-st')?.value||'';
+  let list=equipmentCache.filter(e=>{
+    if(q&&!e.name?.toLowerCase().includes(q)&&!e.no?.toLowerCase().includes(q))return false;
+    if(lv&&String(e.level)!==lv)return false;
+    return true;
+  });
+  if(st==='out') list=list.filter(e=>(stockData[e.id]||0)===0);
+  if(st==='ok') list=list.filter(e=>(stockData[e.id]||0)>0);
+
+  document.getElementById('bs-count').textContent=list.length+' รายการ';
+  const wrap=document.getElementById('bs-tbl');
+  if(!wrap)return;
+  if(!list.length){wrap.innerHTML='<div class="empty"><div class="ico">📦</div>ไม่พบรายการ</div>';return;}
+
+  // Group by level
+  const levels=[...new Set(list.map(e=>e.level))].sort();
+  let html='<table><thead><tr><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>ประเภท</th><th>Q/ชุด</th><th>สต๊อกส่วนกลาง</th><th>📦 สต๊อกสาขา (กรอกเอง)</th><th>สถานะ</th></tr></thead><tbody>';
+  levels.forEach(lv=>{
+    const items=list.filter(e=>e.level===lv);
+    html+=`<tr class="grp-row"><td colspan="8">⚡ Level ${lv} — ${items.length} รายการ</td></tr>`;
+    items.forEach(e=>{
+      const branchQty=stockData[e.id]||0;
+      const save=calcSave(e);
+      const hasEnough=branchQty>=save;
+      html+=`<tr>
+        <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
+        <td style="max-width:200px;font-size:12px"><b>${e.name}</b></td>
+        <td>${lvBadge(e.level)}</td>
+        <td>${e.cat?`<span class="chip">${e.cat}</span>`:'—'}</td>
+        <td class="tdnum" style="color:var(--lav)">${e.qtyPerSet||1}</td>
+        <td class="tdnum" style="color:var(--muted)">${num(e.stock)}</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="number" id="bs-${e.id}" value="${branchQty}" min="0"
+              style="width:90px;background:var(--bg2);border:1px solid ${branchQty>0?'var(--borderB)':'rgba(248,113,113,.4)'};border-radius:6px;padding:5px 8px;color:var(--tx);font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:600;text-align:center"
+              oninput="updateBsRow('${e.id}',${save})">
+            <span style="font-size:11px;color:var(--dim)">/ Save ${num(save)}</span>
+          </div>
+        </td>
+        <td id="bs-st-${e.id}">${branchQty===0?'<span class="stag" style="background:rgba(248,113,113,.1);color:var(--err)">⚠️ ไม่มี</span>':hasEnough?'<span class="stag" style="background:rgba(74,222,128,.1);color:var(--ok)">✅ พอ</span>':'<span class="stag" style="background:rgba(251,191,36,.1);color:var(--warn)">⚡ น้อย</span>'}</td>
+      </tr>`;
+    });
+  });
+  html+='</tbody></table>';
+  wrap.innerHTML=html;
+}
+
+function updateBsRow(eid, save){
+  const val=parseInt(document.getElementById('bs-'+eid)?.value)||0;
+  const stEl=document.getElementById('bs-st-'+eid);
+  const inp=document.getElementById('bs-'+eid);
+  if(inp) inp.style.borderColor=val>0?'var(--borderB)':'rgba(248,113,113,.4)';
+  if(stEl) stEl.innerHTML=val===0?'<span class="stag" style="background:rgba(248,113,113,.1);color:var(--err)">⚠️ ไม่มี</span>':val>=save?'<span class="stag" style="background:rgba(74,222,128,.1);color:var(--ok)">✅ พอ</span>':'<span class="stag" style="background:rgba(251,191,36,.1);color:var(--warn)">⚡ น้อย</span>';
+}
+
+function filterBranchStockTable(){
+  // Re-read current values before filtering
+  const stockData={};
+  equipmentCache.forEach(e=>{
+    const inp=document.getElementById('bs-'+e.id);
+    if(inp) stockData[e.id]=parseInt(inp.value)||0;
+  });
+  renderBranchStockTable(stockData);
+}
+
+async function saveOwnStock(){
+  const bid=currentBranchId||currentBranchName;
+  const stock={};
+  equipmentCache.forEach(e=>{
+    const v=parseInt(document.getElementById('bs-'+e.id)?.value)||0;
+    stock[e.id]=v;
+  });
+  const now=new Date();
+  const monthKey=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;// e.g. "2026-03"
+
+  const batch=db.batch();
+  // 1) อัปเดตสต๊อกปัจจุบัน
+  batch.set(db.collection('branchStock').doc(bid),{
+    branchId:bid, branchName:currentBranchName,
+    stock, updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+  // 2) บันทึกประวัติรายเดือน (เก็บทับถ้าบันทึกซ้ำในเดือนเดียวกัน)
+  batch.set(db.collection('branchStockHistory').doc(`${bid}_${monthKey}`),{
+    branchId:bid, branchName:currentBranchName,
+    monthKey, stock,
+    savedAt:firebase.firestore.FieldValue.serverTimestamp()
+  });
+  await batch.commit();
+
+  const el=document.getElementById('bs-updated');
+  if(el) el.textContent=`บันทึกล่าสุด: ${now.toLocaleDateString('th-TH',{month:'long',year:'numeric'})} · ${now.toLocaleTimeString('th-TH')}`;
+  toast('✅',`บันทึกสต๊อกสาขา ${monthKey} แล้ว`);
+}
+
+async function loadHistoryMonth(monthKey){
+  const bid=currentBranchId||currentBranchName;
+  const doc=await db.collection('branchStockHistory').doc(`${bid}_${monthKey}`).get();
+  if(!doc.exists){toast('⚠️','ไม่พบข้อมูลเดือนนี้');return;}
+  const stockData=doc.data().stock||{};
+  renderBranchStockTable(stockData);
+  const [yr,mo]=monthKey.split('-');
+  const label=new Date(+yr,+mo-1).toLocaleDateString('th-TH',{month:'long',year:'numeric'});
+  toast('📅',`โหลดข้อมูลเดือน ${label} แล้ว (ดูอย่างเดียว)`);
+}
+
+function exportBranchCSV(){
+  const rows=[['No','ชื่ออุปกรณ์','Level','Q/ชุด','สต๊อกส่วนกลาง','สต๊อกสาขา','Save40%','สถานะ']];
+  equipmentCache.forEach(e=>{
+    const v=parseInt(document.getElementById('bs-'+e.id)?.value)||0;
+    const save=calcSave(e);
+    const st=v===0?'ไม่มี':v>=save?'พอ':'น้อย';
+    rows.push([e.no,e.name,'Level '+e.level,e.qtyPerSet||1,e.stock,v,save,st]);
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8'}));
+  a.download=`robostock_${currentBranchName}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  toast('📤','Export CSV สาขาแล้ว');
+}
+
+// ============================================================
+// BRANCH OWN STOCK PAGE
 // ============================================================
 function renderBranchDash(el){
   el.innerHTML=`
