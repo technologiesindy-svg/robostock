@@ -365,7 +365,7 @@ select.fc option{background:var(--card)}
 
 <!-- Version Badge -->
 <div style="position:fixed;bottom:1rem;right:1rem;z-index:500;background:var(--card2);border:1px solid var(--borderB);border-radius:10px;padding:8px 16px;font-size:16px;color:var(--muted);font-family:'Sarabun',sans-serif;font-weight:500;pointer-events:none;box-shadow:0 0 20px rgba(156,109,255,.15)">
-  Idektep <span style="color:var(--p4)">1.0.1</span>
+  Idektep <span style="color:var(--p4)">1.0.2</span>
 </div><span id="t-ico">✅</span><span id="t-msg"></span></div>
 
 <script>
@@ -1141,7 +1141,7 @@ function renderBranchStockTable(stockData={}){
 
   // Group by level
   const levels=[...new Set(list.map(e=>e.level))].sort();
-  let html='<table><thead><tr><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>ประเภท</th><th>Q/ชุด</th><th>สต๊อกส่วนกลาง</th><th>📦 สต๊อกสาขา (กรอกเอง)</th><th>Save '+saveRateLabel()+'</th><th>สถานะ</th></tr></thead><tbody>';
+  let html='<table><thead><tr><th>No.</th><th>ชื่ออุปกรณ์</th><th>Lv</th><th>ประเภท</th><th>Q/ชุด</th><th>📦 จำนวนที่มี (กรอกเอง)</th><th>Save '+saveRateLabel()+'</th><th>สถานะ</th></tr></thead><tbody>';
   levels.forEach(lv=>{
     const items=list.filter(e=>e.level===lv);
     html+=`<tr class="grp-row"><td colspan="8">⚡ Level ${lv} — ${items.length} รายการ</td></tr>`;
@@ -1151,11 +1151,10 @@ function renderBranchStockTable(stockData={}){
       const hasEnough=branchQty>=save;
       html+=`<tr>
         <td><code style="color:var(--cyan);font-size:11px">${e.no||'—'}</code></td>
-        <td style="max-width:200px;font-size:12px"><b>${e.name}</b></td>
+        <td style="max-width:220px;font-size:12px"><b>${e.name}</b></td>
         <td>${lvBadge(e.level)}</td>
         <td>${e.cat?`<span class="chip">${e.cat}</span>`:'—'}</td>
         <td class="tdnum" style="color:var(--lav)">${e.qtyPerSet||1}</td>
-        <td class="tdnum" style="color:var(--muted)">${num(e.stock)}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             <input type="number" id="bs-${e.id}" value="${branchQty}" min="0"
@@ -1164,6 +1163,7 @@ function renderBranchStockTable(stockData={}){
             <span style="font-size:11px;color:var(--dim)">/ Save ${num(save)}</span>
           </div>
         </td>
+        <td class="tdnum" style="color:var(--pink)">${save>0?num(save):'—'}</td>
         <td id="bs-st-${e.id}">${branchQty===0?'<span class="stag" style="background:rgba(248,113,113,.1);color:var(--err)">⚠️ ไม่มี</span>':hasEnough?'<span class="stag" style="background:rgba(74,222,128,.1);color:var(--ok)">✅ พอ</span>':'<span class="stag" style="background:rgba(251,191,36,.1);color:var(--warn)">⚡ น้อย</span>'}</td>
       </tr>`;
     });
@@ -1303,12 +1303,12 @@ function importBranchStockExcel(input){
 }
 
 function exportBranchCSV(){
-  const rows=[['No','ชื่ออุปกรณ์','Level','Q/ชุด','สต๊อกส่วนกลาง','สต๊อกสาขา',`Save${saveRateLabel()}`,'สถานะ']];
+  const rows=[['No','ชื่ออุปกรณ์','Level','ประเภท','Q/ชุด','จำนวนที่มี',`Save${saveRateLabel()}`,'สถานะ']];
   equipmentCache.forEach(e=>{
     const v=parseInt(document.getElementById('bs-'+e.id)?.value)||0;
     const save=calcSave(e,currentRole==='branch');
     const st=v===0?'ไม่มี':v>=save?'พอ':'น้อย';
-    rows.push([e.no,e.name,'Level '+e.level,e.qtyPerSet||1,e.stock,v,save,st]);
+    rows.push([e.no,e.name,'Level '+e.level,e.cat||'',e.qtyPerSet||1,v,save,st]);
   });
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.join(',')).join('\n')],{type:'text/csv;charset=utf-8'}));
